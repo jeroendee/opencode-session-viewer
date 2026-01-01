@@ -1,16 +1,37 @@
+import { useMemo } from 'react';
 import { X } from 'lucide-react';
 import { useSessionStore } from '../store/sessionStore';
-import { groupMessages, getGroupSummary } from '../utils/groupMessages';
-import { truncate } from '../utils/formatters';
+import { groupMessages } from '../utils/groupMessages';
+import { useSearch } from '../hooks/useSearch';
+import { SearchBar } from './SearchBar';
+import { MessageIndex } from './MessageIndex';
+import { JumpToDropdown } from './JumpToDropdown';
 
 interface SidebarProps {
-  onMessageClick?: (messageId: string) => void;
+  activeMessageId: string | null;
+  onMessageClick: (messageId: string) => void;
 }
 
-export function Sidebar({ onMessageClick }: SidebarProps) {
+export function Sidebar({ activeMessageId, onMessageClick }: SidebarProps) {
   const { session, sidebarOpen, setSidebarOpen } = useSessionStore();
 
-  const groups = session ? groupMessages(session.messages) : [];
+  const groups = useMemo(() => {
+    return session ? groupMessages(session.messages) : [];
+  }, [session]);
+
+  const {
+    searchQuery,
+    searchResults,
+    matchedMessageIds,
+    setSearchQuery,
+    clearSearch,
+  } = useSearch(session);
+
+  // Find current index for JumpToDropdown
+  const currentIndex = useMemo(() => {
+    if (!activeMessageId) return -1;
+    return groups.findIndex(g => g.userMessage.info.id === activeMessageId);
+  }, [groups, activeMessageId]);
 
   return (
     <>
@@ -48,38 +69,36 @@ export function Sidebar({ onMessageClick }: SidebarProps) {
           </button>
         </div>
 
+        {/* Search and Jump To */}
+        {session && (
+          <div className="p-4 space-y-3 border-b border-gray-200 dark:border-gray-700">
+            <SearchBar
+              value={searchQuery}
+              onChange={setSearchQuery}
+              onClear={clearSearch}
+              resultCount={searchResults.length}
+            />
+            <JumpToDropdown
+              groups={groups}
+              currentIndex={currentIndex}
+              onSelect={onMessageClick}
+            />
+          </div>
+        )}
+
         {/* Message index */}
-        <nav className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-4">
           <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
             Messages ({groups.length})
           </h3>
 
-          {groups.length === 0 ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              No session loaded
-            </p>
-          ) : (
-            <ul className="space-y-1">
-              {groups.map((group, index) => (
-                <li key={group.userMessage.info.id}>
-                  <button
-                    onClick={() => onMessageClick?.(group.userMessage.info.id)}
-                    className="w-full text-left px-3 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
-                  >
-                    <div className="flex items-start gap-2">
-                      <span className="text-xs text-gray-400 dark:text-gray-500 font-mono mt-0.5">
-                        {index + 1}.
-                      </span>
-                      <span className="text-sm text-gray-700 dark:text-gray-200 group-hover:text-gray-900 dark:group-hover:text-white">
-                        {truncate(getGroupSummary(group), 40)}
-                      </span>
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </nav>
+          <MessageIndex
+            groups={groups}
+            activeMessageId={activeMessageId}
+            matchedMessageIds={matchedMessageIds}
+            onMessageClick={onMessageClick}
+          />
+        </div>
       </aside>
     </>
   );

@@ -3,16 +3,11 @@ import { Sidebar } from './components/Sidebar';
 import { LoadSession } from './components/LoadSession';
 import { MessageList } from './components/MessageList';
 import { useSessionStore } from './store/sessionStore';
+import { useNavigation } from './hooks/useNavigation';
 
 function App() {
-  const { session, sidebarOpen } = useSessionStore();
-
-  const handleMessageClick = (messageId: string) => {
-    const element = document.getElementById(`msg-${messageId}`);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  };
+  const { session } = useSessionStore();
+  const { activeMessageId, scrollToMessage } = useNavigation();
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
@@ -20,8 +15,11 @@ function App() {
 
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar - only show when session is loaded */}
-        {session && sidebarOpen && (
-          <Sidebar onMessageClick={handleMessageClick} />
+        {session && (
+          <Sidebar
+            activeMessageId={activeMessageId}
+            onMessageClick={scrollToMessage}
+          />
         )}
 
         {/* Main content */}
