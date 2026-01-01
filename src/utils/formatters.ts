@@ -115,6 +115,22 @@ export function formatDate(timestamp: number, locale?: string): string {
 }
 
 /**
+ * Format a timestamp as just the time (HH:MM).
+ * @example formatTime(1704067200000) => "13:18"
+ */
+export function formatTime(timestamp: number, locale?: string): string {
+  const date = new Date(timestamp);
+  
+  const options: Intl.DateTimeFormatOptions = {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  };
+
+  return date.toLocaleString(locale, options);
+}
+
+/**
  * Format a timestamp as a relative time string.
  * @example formatRelativeTime(Date.now() - 60000) => "1 minute ago"
  */
