@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useImperativeHandle, forwardRef } from 'react';
 import { X } from 'lucide-react';
 import { useSessionStore } from '../store/sessionStore';
 import { groupMessages } from '../utils/groupMessages';
@@ -12,7 +12,18 @@ interface SidebarProps {
   onMessageClick: (messageId: string) => void;
 }
 
-export function Sidebar({ activeMessageId, onMessageClick }: SidebarProps) {
+export interface SidebarHandle {
+  focusSearch: () => void;
+}
+
+export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar({ activeMessageId, onMessageClick }, ref) {
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    focusSearch: () => {
+      searchInputRef.current?.focus();
+    },
+  }));
   const { session, sidebarOpen, setSidebarOpen } = useSessionStore();
 
   const groups = useMemo(() => {
@@ -73,6 +84,7 @@ export function Sidebar({ activeMessageId, onMessageClick }: SidebarProps) {
         {session && (
           <div className="p-4 space-y-3 border-b border-gray-200 dark:border-gray-700">
             <SearchBar
+              ref={searchInputRef}
               value={searchQuery}
               onChange={setSearchQuery}
               onClear={clearSearch}
@@ -102,4 +114,4 @@ export function Sidebar({ activeMessageId, onMessageClick }: SidebarProps) {
       </aside>
     </>
   );
-}
+});

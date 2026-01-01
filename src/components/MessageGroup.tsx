@@ -8,9 +8,11 @@ interface MessageGroupProps {
 }
 
 export function MessageGroup({ group, index }: MessageGroupProps) {
+  const messageId = group.userMessage.info.id;
+
   return (
     <div
-      id={`msg-${group.userMessage.info.id}`}
+      id={`msg-${messageId}`}
       className="space-y-4"
     >
       {/* User message */}
@@ -18,7 +20,7 @@ export function MessageGroup({ group, index }: MessageGroupProps) {
 
       {/* Assistant response(s) */}
       {group.assistantMessages.length > 0 && (
-        <AssistantResponse messages={group.assistantMessages} />
+        <AssistantResponse messages={group.assistantMessages} messageId={messageId} />
       )}
     </div>
   );

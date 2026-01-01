@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Bot, ChevronDown, ChevronRight } from 'lucide-react';
 import type { AssistantMessage, Part } from '../types/session';
 import { isStepStartPart } from '../types/session';
@@ -9,6 +9,7 @@ import { PartRenderer } from './parts/PartRenderer';
 
 interface AssistantResponseProps {
   messages: AssistantMessage[];
+  messageId: string;
   defaultExpanded?: boolean;
 }
 
@@ -53,8 +54,21 @@ function groupPartsIntoSteps(messages: AssistantMessage[]): StepData[] {
   return steps;
 }
 
-export function AssistantResponse({ messages, defaultExpanded = true }: AssistantResponseProps) {
+export function AssistantResponse({ messages, messageId, defaultExpanded = true }: AssistantResponseProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+
+  // Listen for toggle-collapse events from keyboard shortcuts
+  const handleToggleCollapse = useCallback((e: Event) => {
+    const customEvent = e as CustomEvent<{ messageId: string }>;
+    if (customEvent.detail.messageId === messageId) {
+      setIsExpanded(prev => !prev);
+    }
+  }, [messageId]);
+
+  useEffect(() => {
+    window.addEventListener('toggle-collapse', handleToggleCollapse);
+    return () => window.removeEventListener('toggle-collapse', handleToggleCollapse);
+  }, [handleToggleCollapse]);
 
   if (messages.length === 0) {
     return null;

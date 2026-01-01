@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, forwardRef } from 'react';
 import { Search, X } from 'lucide-react';
 
 interface SearchBarProps {
@@ -9,13 +9,13 @@ interface SearchBarProps {
   debounceMs?: number;
 }
 
-export function SearchBar({
+export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBar({
   value,
   onChange,
   onClear,
   resultCount,
   debounceMs = 300,
-}: SearchBarProps) {
+}, ref) {
   const [localValue, setLocalValue] = useState(value);
 
   // Sync local value when external value changes
@@ -56,6 +56,7 @@ export function SearchBar({
 
       {/* Input */}
       <input
+        ref={ref}
         type="text"
         value={localValue}
         onChange={handleChange}
@@ -84,4 +85,4 @@ export function SearchBar({
       )}
     </div>
   );
-}
+});
