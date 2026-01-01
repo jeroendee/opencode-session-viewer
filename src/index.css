@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom base styles */
+body {
+  @apply antialiased;
+}
+
+/* Dark mode base */
+html.dark {
+  color-scheme: dark;
+}
