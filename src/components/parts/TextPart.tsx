@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Copy, Check } from 'lucide-react';
@@ -131,7 +132,7 @@ export function TextPart({ part }: TextPartProps) {
 
   return (
     <div className="prose prose-gray dark:prose-invert max-w-none text-gray-800 dark:text-gray-200">
-      <ReactMarkdown components={markdownComponents}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
         {part.text}
       </ReactMarkdown>
     </div>
