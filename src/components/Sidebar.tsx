@@ -58,11 +58,11 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
       {/* Sidebar */}
       <aside
         className={`
-          fixed md:static inset-y-0 left-0 z-30
+          fixed md:relative inset-y-0 left-0 z-30
           bg-white dark:bg-gray-800
           border-r border-gray-200 dark:border-gray-700
           transform transition-all duration-200 ease-in-out
-          flex flex-col
+          flex flex-col h-full
           ${sidebarOpen 
             ? 'translate-x-0 w-72' 
             : '-translate-x-full md:translate-x-0 md:w-0 md:overflow-hidden md:border-r-0'}
