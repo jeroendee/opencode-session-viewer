@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Session, SessionInfo } from '../types/session';
 import type { VirtualFileSystem } from '../lib/fileSystem';
+import { loadSessionContent } from '../lib/sessionLoader';
 
 /**
  * Represents a session with its child sessions (for branched conversations).
@@ -238,22 +239,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ isLoadingSession: true, loadError: null, selectedSessionId: sessionId });
 
     try {
-      // If we have a file system, load the full session data
+      // If we have a file system, load the full session data using lazy loading
       if (state.fileSystem) {
-        const sessionPath = ['session', sessionInfo.projectID, `${sessionId}.json`];
-        const content = await state.fileSystem.readFile(sessionPath);
+        const session = await loadSessionContent(
+          sessionId,
+          state.allSessions,
+          state.fileSystem
+        );
 
-        if (!content) {
-          throw new Error(`Session file not found: ${sessionPath.join('/')}`);
-        }
-
-        const data: unknown = JSON.parse(content);
-        if (!validateSessionData(data)) {
-          throw new Error('Invalid session format: missing info or messages');
+        // Check if user selected a different session while we were loading
+        // If so, ignore this result to avoid race condition
+        if (get().selectedSessionId !== sessionId) {
+          return;
         }
 
         set({
-          session: data,
+          session,
           isLoadingSession: false,
           loadError: null,
         });
@@ -262,8 +263,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         set({ isLoadingSession: false });
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load session';
-      set({ isLoadingSession: false, loadError: message });
+      // Only update error if this is still the selected session
+      if (get().selectedSessionId === sessionId) {
+        const message = err instanceof Error ? err.message : 'Failed to load session';
+        set({ isLoadingSession: false, loadError: message });
+      }
     }
   },
 

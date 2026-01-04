@@ -49,14 +49,58 @@ const createMockSessionNode = (
 });
 
 // Helper to create mock VirtualFileSystem
-const createMockFileSystem = (files: Map<string, string>): VirtualFileSystem => ({
-  readFile: vi.fn().mockImplementation(async (path: string[]) => {
-    const pathString = path.join('/');
-    return files.get(pathString) ?? null;
-  }),
-  listDirectory: vi.fn().mockResolvedValue([]),
-  exists: vi.fn().mockResolvedValue(true),
-});
+const createMockFileSystem = (files: Map<string, string>): VirtualFileSystem => {
+  // Build set of directories for listing
+  const directories = new Set<string>();
+  directories.add(''); // root
+
+  for (const filePath of files.keys()) {
+    const segments = filePath.split('/');
+    for (let i = 1; i < segments.length; i++) {
+      directories.add(segments.slice(0, i).join('/'));
+    }
+  }
+
+  return {
+    readFile: vi.fn().mockImplementation(async (path: string[]) => {
+      const pathString = path.join('/');
+      return files.get(pathString) ?? null;
+    }),
+    listDirectory: vi.fn().mockImplementation(async (path: string[]) => {
+      const pathString = path.join('/');
+
+      // If path is a file, return empty
+      if (files.has(pathString)) {
+        return [];
+      }
+
+      // If path doesn't exist as a directory, return empty
+      if (pathString !== '' && !directories.has(pathString)) {
+        return [];
+      }
+
+      const prefix = pathString === '' ? '' : pathString + '/';
+      const entries = new Set<string>();
+
+      for (const filePath of files.keys()) {
+        if (pathString === '' || filePath.startsWith(prefix)) {
+          const relativePath = pathString === '' ? filePath : filePath.slice(prefix.length);
+          const firstSegment = relativePath.split('/')[0];
+          if (firstSegment) {
+            entries.add(firstSegment);
+          }
+        }
+      }
+
+      return Array.from(entries);
+    }),
+    exists: vi.fn().mockImplementation(async (path: string[]) => {
+      if (path.length === 0) return true;
+      const pathString = path.join('/');
+      return files.has(pathString) || directories.has(pathString);
+    }),
+  };
+};
 
 describe('sessionStore - multi-session state', () => {
   beforeEach(() => {
@@ -227,14 +271,27 @@ describe('sessionStore - multi-session state', () => {
       expect(useSessionStore.getState().loadError).toBe('Session not found: nonexistent');
     });
 
-    it('loads session data from file system', async () => {
+    it('loads session data from file system using lazy loading', async () => {
       const sessionInfo = createMockSessionInfo('session-1', 'project-1');
-      const fullSessionData = {
-        info: sessionInfo,
-        messages: [],
+      // Create message and part files instead of a single session file
+      const msgInfo = {
+        id: 'msg-1',
+        sessionID: 'session-1',
+        role: 'user',
+        time: { created: Date.now() },
+        agent: 'test-agent',
+        model: { providerID: 'test-provider', modelID: 'test-model' },
+      };
+      const partInfo = {
+        id: 'part-1',
+        sessionID: 'session-1',
+        messageID: 'msg-1',
+        type: 'text',
+        text: 'Hello world',
       };
       const files = new Map([
-        ['session/project-1/session-1.json', JSON.stringify(fullSessionData)],
+        ['message/session-1/msg-1.json', JSON.stringify(msgInfo)],
+        ['part/msg-1/part-1.json', JSON.stringify(partInfo)],
       ]);
       const mockFs = createMockFileSystem(files);
 
@@ -252,17 +309,13 @@ describe('sessionStore - multi-session state', () => {
 
       expect(useSessionStore.getState().session).not.toBeNull();
       expect(useSessionStore.getState().session?.info.id).toBe('session-1');
+      expect(useSessionStore.getState().session?.messages).toHaveLength(1);
+      expect(useSessionStore.getState().session?.messages[0].parts).toHaveLength(1);
     });
 
     it('sets isLoadingSession during load', async () => {
       const sessionInfo = createMockSessionInfo('session-1', 'project-1');
-      const fullSessionData = {
-        info: sessionInfo,
-        messages: [],
-      };
-      const files = new Map([
-        ['session/project-1/session-1.json', JSON.stringify(fullSessionData)],
-      ]);
+      const files = new Map<string, string>(); // Empty - no messages
       const mockFs = createMockFileSystem(files);
 
       const node = createMockSessionNode(sessionInfo);
@@ -284,9 +337,9 @@ describe('sessionStore - multi-session state', () => {
       expect(useSessionStore.getState().isLoadingSession).toBe(false);
     });
 
-    it('sets loadError when file not found', async () => {
+    it('loads session with empty messages when no message files exist', async () => {
       const sessionInfo = createMockSessionInfo('session-1', 'project-1');
-      const mockFs = createMockFileSystem(new Map()); // Empty - no files
+      const mockFs = createMockFileSystem(new Map()); // Empty - no messages
 
       const node = createMockSessionNode(sessionInfo);
       const project: ProjectInfo = {
@@ -300,13 +353,25 @@ describe('sessionStore - multi-session state', () => {
 
       await useSessionStore.getState().selectSession('session-1');
 
-      expect(useSessionStore.getState().loadError).toContain('Session file not found');
+      // With lazy loading, empty message directory is valid - just means no messages
+      expect(useSessionStore.getState().loadError).toBeNull();
+      expect(useSessionStore.getState().session).not.toBeNull();
+      expect(useSessionStore.getState().session?.messages).toEqual([]);
     });
 
-    it('sets loadError when session data is invalid', async () => {
+    it('loads session and skips invalid message files', async () => {
       const sessionInfo = createMockSessionInfo('session-1', 'project-1');
+      const validMsgInfo = {
+        id: 'msg-1',
+        sessionID: 'session-1',
+        role: 'user',
+        time: { created: Date.now() },
+        agent: 'test-agent',
+        model: { providerID: 'test-provider', modelID: 'test-model' },
+      };
       const files = new Map([
-        ['session/project-1/session-1.json', JSON.stringify({ invalid: 'data' })],
+        ['message/session-1/msg-1.json', JSON.stringify(validMsgInfo)],
+        ['message/session-1/corrupted.json', 'not valid json {{{'],
       ]);
       const mockFs = createMockFileSystem(files);
 
@@ -322,7 +387,10 @@ describe('sessionStore - multi-session state', () => {
 
       await useSessionStore.getState().selectSession('session-1');
 
-      expect(useSessionStore.getState().loadError).toContain('Invalid session format');
+      // With lazy loading, corrupted files are skipped but valid ones are loaded
+      expect(useSessionStore.getState().loadError).toBeNull();
+      expect(useSessionStore.getState().session).not.toBeNull();
+      expect(useSessionStore.getState().session?.messages).toHaveLength(1);
     });
 
     it('works without file system (just updates selectedSessionId)', async () => {

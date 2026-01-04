@@ -1,5 +1,5 @@
 import type { VirtualFileSystem } from './fileSystem';
-import type { SessionInfo } from '../types/session';
+import type { Session, SessionInfo, Message, MessageInfo, Part } from '../types/session';
 import type { ProjectInfo, SessionNode } from '../store/sessionStore';
 
 /**
@@ -213,4 +213,114 @@ export async function loadAllSessions(
   }
 
   return { projects, sessions, errorCount };
+}
+
+/**
+ * Loads the full content of a session including all messages and their parts.
+ *
+ * Structure expected:
+ * - message/{sessionId}/*.json - message info files
+ * - part/{messageId}/*.json - part files for each message
+ *
+ * @param sessionId - The ID of the session to load
+ * @param allSessions - Map of all session info (from loadAllSessions)
+ * @param fs - Virtual file system to read from
+ * @returns The full session with messages and parts
+ * @throws Error if session is not found
+ */
+export async function loadSessionContent(
+  sessionId: string,
+  allSessions: Record<string, SessionInfo>,
+  fs: VirtualFileSystem
+): Promise<Session> {
+  // 1. Get session info from allSessions (already loaded)
+  const info = allSessions[sessionId];
+  if (!info) {
+    throw new Error(`Session not found: ${sessionId}`);
+  }
+
+  // 2. List and load all messages from message/<sessionId>/
+  let messageFiles: string[];
+  try {
+    messageFiles = await fs.listDirectory(['message', sessionId]);
+  } catch (error) {
+    console.warn(`Failed to list messages for session ${sessionId}: ${error}`);
+    // Return session with empty messages if we can't list the directory
+    return { info, messages: [] };
+  }
+
+  const messages: Message[] = [];
+
+  for (const msgFile of messageFiles) {
+    if (!msgFile.endsWith('.json')) {
+      continue;
+    }
+
+    const msgId = msgFile.replace('.json', '');
+    let msgJson: string | null;
+    try {
+      msgJson = await fs.readFile(['message', sessionId, msgFile]);
+    } catch {
+      console.warn(`Failed to read message file: ${msgFile}`);
+      continue;
+    }
+    if (!msgJson) continue;
+
+    let msgInfo: MessageInfo;
+    try {
+      msgInfo = JSON.parse(msgJson) as MessageInfo;
+    } catch {
+      console.warn(`Failed to parse message file: ${msgFile}`);
+      continue;
+    }
+
+    // 3. Load parts for this message from part/<messageId>/
+    let partFiles: string[];
+    try {
+      partFiles = await fs.listDirectory(['part', msgId]);
+    } catch {
+      console.warn(`Failed to list parts for message ${msgId}`);
+      // Message with no parts is still valid
+      partFiles = [];
+    }
+
+    const parts: Part[] = [];
+
+    for (const partFile of partFiles) {
+      if (!partFile.endsWith('.json')) {
+        continue;
+      }
+
+      let partJson: string | null;
+      try {
+        partJson = await fs.readFile(['part', msgId, partFile]);
+      } catch {
+        console.warn(`Failed to read part file: ${partFile}`);
+        continue;
+      }
+      if (!partJson) continue;
+
+      try {
+        const part = JSON.parse(partJson) as Part;
+        parts.push(part);
+      } catch {
+        console.warn(`Failed to parse part file: ${partFile}`);
+      }
+    }
+
+    // Sort parts by filename (e.g., "0.json", "1.json") for deterministic order
+    parts.sort((a, b) => {
+      // Parts typically have an index in the filename, but we can use ID as fallback
+      const aId = (a as { id?: string }).id ?? '';
+      const bId = (b as { id?: string }).id ?? '';
+      return aId.localeCompare(bId);
+    });
+
+    messages.push({ info: msgInfo, parts });
+  }
+
+  // 4. Sort messages by creation time
+  messages.sort((a, b) => a.info.time.created - b.info.time.created);
+
+  return { info, messages };
 }

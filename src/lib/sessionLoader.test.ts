@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { loadAllSessions } from './sessionLoader';
+import { loadAllSessions, loadSessionContent } from './sessionLoader';
 import type { VirtualFileSystem } from './fileSystem';
-import type { SessionInfo } from '../types/session';
+import type { SessionInfo, MessageInfo, Part } from '../types/session';
 
 /**
  * Creates a mock VirtualFileSystem from a simple object structure.
@@ -513,5 +513,365 @@ describe('loadAllSessions performance', () => {
 
     // Should complete quickly due to parallel loading (mock fs is instant)
     expect(duration).toBeLessThan(100);
+  });
+});
+
+/**
+ * Creates a mock message info for testing.
+ */
+function createMockMessageInfo(
+  id: string,
+  sessionId: string,
+  role: 'user' | 'assistant',
+  createdTime: number
+): MessageInfo {
+  if (role === 'user') {
+    return {
+      id,
+      sessionID: sessionId,
+      role: 'user',
+      time: { created: createdTime },
+      agent: 'test-agent',
+      model: { providerID: 'test-provider', modelID: 'test-model' },
+    };
+  }
+  return {
+    id,
+    sessionID: sessionId,
+    role: 'assistant',
+    parentID: 'parent-msg',
+    time: { created: createdTime },
+    modelID: 'test-model',
+    providerID: 'test-provider',
+    agent: 'test-agent',
+    mode: 'normal',
+    path: { cwd: '/test', root: '/test' },
+    cost: 0,
+    tokens: { input: 10, output: 20, reasoning: 0, cache: { read: 0, write: 0 } },
+  };
+}
+
+/**
+ * Creates a mock text part for testing.
+ */
+function createMockTextPart(id: string, sessionId: string, messageId: string, text: string): Part {
+  return {
+    id,
+    sessionID: sessionId,
+    messageID: messageId,
+    type: 'text',
+    text,
+  };
+}
+
+describe('loadSessionContent', () => {
+  let consoleWarnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('throws error when session not found in allSessions', async () => {
+    const fs = createMockFileSystem({});
+    const allSessions: Record<string, SessionInfo> = {};
+
+    await expect(loadSessionContent('nonexistent', allSessions, fs)).rejects.toThrow(
+      'Session not found: nonexistent'
+    );
+  });
+
+  it('loads session with no messages', async () => {
+    const sessionInfo: SessionInfo = {
+      id: 'sess-1',
+      version: '1.0',
+      projectID: 'proj-1',
+      directory: '/path',
+      title: 'Test Session',
+      time: { created: 1000, updated: 2000 },
+    };
+    const allSessions: Record<string, SessionInfo> = { 'sess-1': sessionInfo };
+    const fs = createMockFileSystem({});
+
+    const session = await loadSessionContent('sess-1', allSessions, fs);
+
+    expect(session.info).toBe(sessionInfo);
+    expect(session.messages).toEqual([]);
+  });
+
+  it('loads session with one message and no parts', async () => {
+    const sessionInfo: SessionInfo = {
+      id: 'sess-1',
+      version: '1.0',
+      projectID: 'proj-1',
+      directory: '/path',
+      title: 'Test Session',
+      time: { created: 1000, updated: 2000 },
+    };
+    const msgInfo = createMockMessageInfo('msg-1', 'sess-1', 'user', 1500);
+    const allSessions: Record<string, SessionInfo> = { 'sess-1': sessionInfo };
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(msgInfo),
+    });
+
+    const session = await loadSessionContent('sess-1', allSessions, fs);
+
+    expect(session.messages).toHaveLength(1);
+    expect(session.messages[0].info).toEqual(msgInfo);
+    expect(session.messages[0].parts).toEqual([]);
+  });
+
+  it('loads session with message and parts', async () => {
+    const sessionInfo: SessionInfo = {
+      id: 'sess-1',
+      version: '1.0',
+      projectID: 'proj-1',
+      directory: '/path',
+      title: 'Test Session',
+      time: { created: 1000, updated: 2000 },
+    };
+    const msgInfo = createMockMessageInfo('msg-1', 'sess-1', 'assistant', 1500);
+    const part1 = createMockTextPart('part-1', 'sess-1', 'msg-1', 'Hello');
+    const part2 = createMockTextPart('part-2', 'sess-1', 'msg-1', 'World');
+    const allSessions: Record<string, SessionInfo> = { 'sess-1': sessionInfo };
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(msgInfo),
+      'part/msg-1/part-1.json': JSON.stringify(part1),
+      'part/msg-1/part-2.json': JSON.stringify(part2),
+    });
+
+    const session = await loadSessionContent('sess-1', allSessions, fs);
+
+    expect(session.messages).toHaveLength(1);
+    expect(session.messages[0].parts).toHaveLength(2);
+    expect(session.messages[0].parts).toContainEqual(part1);
+    expect(session.messages[0].parts).toContainEqual(part2);
+  });
+
+  it('loads multiple messages and sorts by creation time', async () => {
+    const sessionInfo: SessionInfo = {
+      id: 'sess-1',
+      version: '1.0',
+      projectID: 'proj-1',
+      directory: '/path',
+      title: 'Test Session',
+      time: { created: 1000, updated: 2000 },
+    };
+    const msg1 = createMockMessageInfo('msg-1', 'sess-1', 'user', 3000);
+    const msg2 = createMockMessageInfo('msg-2', 'sess-1', 'assistant', 1000);
+    const msg3 = createMockMessageInfo('msg-3', 'sess-1', 'user', 2000);
+    const allSessions: Record<string, SessionInfo> = { 'sess-1': sessionInfo };
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(msg1),
+      'message/sess-1/msg-2.json': JSON.stringify(msg2),
+      'message/sess-1/msg-3.json': JSON.stringify(msg3),
+    });
+
+    const session = await loadSessionContent('sess-1', allSessions, fs);
+
+    expect(session.messages).toHaveLength(3);
+    // Sorted by creation time (oldest first)
+    expect(session.messages[0].info.id).toBe('msg-2'); // created at 1000
+    expect(session.messages[1].info.id).toBe('msg-3'); // created at 2000
+    expect(session.messages[2].info.id).toBe('msg-1'); // created at 3000
+  });
+
+  it('skips non-json files in message directory', async () => {
+    const sessionInfo: SessionInfo = {
+      id: 'sess-1',
+      version: '1.0',
+      projectID: 'proj-1',
+      directory: '/path',
+      title: 'Test Session',
+      time: { created: 1000, updated: 2000 },
+    };
+    const msgInfo = createMockMessageInfo('msg-1', 'sess-1', 'user', 1500);
+    const allSessions: Record<string, SessionInfo> = { 'sess-1': sessionInfo };
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(msgInfo),
+      'message/sess-1/readme.txt': 'not a message',
+      'message/sess-1/notes.md': '# Notes',
+    });
+
+    const session = await loadSessionContent('sess-1', allSessions, fs);
+
+    expect(session.messages).toHaveLength(1);
+    expect(session.messages[0].info.id).toBe('msg-1');
+  });
+
+  it('skips non-json files in part directory', async () => {
+    const sessionInfo: SessionInfo = {
+      id: 'sess-1',
+      version: '1.0',
+      projectID: 'proj-1',
+      directory: '/path',
+      title: 'Test Session',
+      time: { created: 1000, updated: 2000 },
+    };
+    const msgInfo = createMockMessageInfo('msg-1', 'sess-1', 'user', 1500);
+    const part1 = createMockTextPart('part-1', 'sess-1', 'msg-1', 'Hello');
+    const allSessions: Record<string, SessionInfo> = { 'sess-1': sessionInfo };
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(msgInfo),
+      'part/msg-1/part-1.json': JSON.stringify(part1),
+      'part/msg-1/readme.txt': 'not a part',
+    });
+
+    const session = await loadSessionContent('sess-1', allSessions, fs);
+
+    expect(session.messages[0].parts).toHaveLength(1);
+    expect(session.messages[0].parts[0].id).toBe('part-1');
+  });
+
+  it('handles corrupted message files gracefully', async () => {
+    const sessionInfo: SessionInfo = {
+      id: 'sess-1',
+      version: '1.0',
+      projectID: 'proj-1',
+      directory: '/path',
+      title: 'Test Session',
+      time: { created: 1000, updated: 2000 },
+    };
+    const validMsg = createMockMessageInfo('msg-1', 'sess-1', 'user', 1500);
+    const allSessions: Record<string, SessionInfo> = { 'sess-1': sessionInfo };
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(validMsg),
+      'message/sess-1/corrupted.json': 'not valid json {{{',
+    });
+
+    const session = await loadSessionContent('sess-1', allSessions, fs);
+
+    expect(session.messages).toHaveLength(1);
+    expect(session.messages[0].info.id).toBe('msg-1');
+    expect(consoleWarnSpy).toHaveBeenCalledWith('Failed to parse message file: corrupted.json');
+  });
+
+  it('handles corrupted part files gracefully', async () => {
+    const sessionInfo: SessionInfo = {
+      id: 'sess-1',
+      version: '1.0',
+      projectID: 'proj-1',
+      directory: '/path',
+      title: 'Test Session',
+      time: { created: 1000, updated: 2000 },
+    };
+    const msgInfo = createMockMessageInfo('msg-1', 'sess-1', 'user', 1500);
+    const validPart = createMockTextPart('part-1', 'sess-1', 'msg-1', 'Hello');
+    const allSessions: Record<string, SessionInfo> = { 'sess-1': sessionInfo };
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(msgInfo),
+      'part/msg-1/part-1.json': JSON.stringify(validPart),
+      'part/msg-1/corrupted.json': 'not valid json {{{',
+    });
+
+    const session = await loadSessionContent('sess-1', allSessions, fs);
+
+    expect(session.messages[0].parts).toHaveLength(1);
+    expect(session.messages[0].parts[0].id).toBe('part-1');
+    expect(consoleWarnSpy).toHaveBeenCalledWith('Failed to parse part file: corrupted.json');
+  });
+
+  it('handles missing message file content', async () => {
+    const sessionInfo: SessionInfo = {
+      id: 'sess-1',
+      version: '1.0',
+      projectID: 'proj-1',
+      directory: '/path',
+      title: 'Test Session',
+      time: { created: 1000, updated: 2000 },
+    };
+    const allSessions: Record<string, SessionInfo> = { 'sess-1': sessionInfo };
+
+    // Create a filesystem that lists the file but returns null content
+    const mockFs: VirtualFileSystem = {
+      readFile: async () => null, // File exists in listing but content is null
+      async listDirectory(path: string[]): Promise<string[]> {
+        if (path.join('/') === 'message/sess-1') {
+          return ['msg-1.json'];
+        }
+        return [];
+      },
+      exists: async () => true,
+    };
+
+    const session = await loadSessionContent('sess-1', allSessions, mockFs);
+
+    expect(session.messages).toHaveLength(0);
+  });
+
+  it('handles missing part file content', async () => {
+    const sessionInfo: SessionInfo = {
+      id: 'sess-1',
+      version: '1.0',
+      projectID: 'proj-1',
+      directory: '/path',
+      title: 'Test Session',
+      time: { created: 1000, updated: 2000 },
+    };
+    const msgInfo = createMockMessageInfo('msg-1', 'sess-1', 'user', 1500);
+    const allSessions: Record<string, SessionInfo> = { 'sess-1': sessionInfo };
+
+    // Create a filesystem that returns null for part content
+    const mockFs: VirtualFileSystem = {
+      async readFile(path: string[]): Promise<string | null> {
+        if (path.join('/') === 'message/sess-1/msg-1.json') {
+          return JSON.stringify(msgInfo);
+        }
+        return null; // Part content is null
+      },
+      async listDirectory(path: string[]): Promise<string[]> {
+        if (path.join('/') === 'message/sess-1') {
+          return ['msg-1.json'];
+        }
+        if (path.join('/') === 'part/msg-1') {
+          return ['part-1.json'];
+        }
+        return [];
+      },
+      async exists(): Promise<boolean> {
+        return true;
+      },
+    };
+
+    const session = await loadSessionContent('sess-1', allSessions, mockFs);
+
+    expect(session.messages).toHaveLength(1);
+    expect(session.messages[0].parts).toHaveLength(0);
+  });
+
+  it('loads complex session with multiple messages and parts', async () => {
+    const sessionInfo: SessionInfo = {
+      id: 'sess-1',
+      version: '1.0',
+      projectID: 'proj-1',
+      directory: '/path',
+      title: 'Test Session',
+      time: { created: 1000, updated: 2000 },
+    };
+    const msg1 = createMockMessageInfo('msg-1', 'sess-1', 'user', 1000);
+    const msg2 = createMockMessageInfo('msg-2', 'sess-1', 'assistant', 2000);
+    const part1a = createMockTextPart('part-1a', 'sess-1', 'msg-1', 'Question');
+    const part2a = createMockTextPart('part-2a', 'sess-1', 'msg-2', 'Answer');
+    const part2b = createMockTextPart('part-2b', 'sess-1', 'msg-2', 'More info');
+    const allSessions: Record<string, SessionInfo> = { 'sess-1': sessionInfo };
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(msg1),
+      'message/sess-1/msg-2.json': JSON.stringify(msg2),
+      'part/msg-1/part-1a.json': JSON.stringify(part1a),
+      'part/msg-2/part-2a.json': JSON.stringify(part2a),
+      'part/msg-2/part-2b.json': JSON.stringify(part2b),
+    });
+
+    const session = await loadSessionContent('sess-1', allSessions, fs);
+
+    expect(session.messages).toHaveLength(2);
+
+    // First message (user)
+    expect(session.messages[0].info.id).toBe('msg-1');
+    expect(session.messages[0].parts).toHaveLength(1);
+    expect(session.messages[0].parts[0].id).toBe('part-1a');
+
+    // Second message (assistant)
+    expect(session.messages[1].info.id).toBe('msg-2');
+    expect(session.messages[1].parts).toHaveLength(2);
   });
 });
