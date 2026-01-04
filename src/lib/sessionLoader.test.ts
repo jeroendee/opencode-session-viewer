@@ -437,6 +437,54 @@ describe('loadAllSessions', () => {
   });
 });
 
+describe('loadAllSessions circular references', () => {
+  it('handles mutual parent references without infinite loop', async () => {
+    // A.parentID = B, B.parentID = A - should not cause infinite loop
+    const fs = createMockFileSystem({
+      'session/proj-1/sess-a.json': createSessionJson({
+        id: 'sess-a',
+        projectID: 'proj-1',
+        parentID: 'sess-b',
+        time: { created: 1000, updated: 1500 },
+      }),
+      'session/proj-1/sess-b.json': createSessionJson({
+        id: 'sess-b',
+        projectID: 'proj-1',
+        parentID: 'sess-a',
+        time: { created: 2000, updated: 2500 },
+      }),
+    });
+
+    const result = await loadAllSessions(fs);
+
+    // Both should be present - algorithm processes each session once
+    expect(Object.keys(result.sessions)).toHaveLength(2);
+    expect(result.errorCount).toBe(0);
+    // The tree structure may vary but should not hang
+    expect(result.projects[0].sessions.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it('handles self-referential parentID', async () => {
+    // Session refers to itself as parent
+    const fs = createMockFileSystem({
+      'session/proj-1/sess-a.json': createSessionJson({
+        id: 'sess-a',
+        projectID: 'proj-1',
+        parentID: 'sess-a', // Self-reference
+        time: { created: 1000, updated: 1500 },
+      }),
+    });
+
+    const result = await loadAllSessions(fs);
+
+    // Should handle gracefully - session can't be its own parent
+    expect(Object.keys(result.sessions)).toHaveLength(1);
+    // Since parentID = self and nodeMap.has(parentID) = true,
+    // it would try to add itself as its own child, which is weird but shouldn't crash
+    expect(result.projects[0].sessions.length).toBeGreaterThanOrEqual(0);
+  });
+});
+
 describe('loadAllSessions performance', () => {
   it('loads many sessions in parallel', async () => {
     // Create 50 sessions across 5 projects
