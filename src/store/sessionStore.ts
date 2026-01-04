@@ -1,16 +1,44 @@
 import { create } from 'zustand';
-import type { Session } from '../types/session';
+import type { Session, SessionInfo } from '../types/session';
+import type { VirtualFileSystem } from '../lib/fileSystem';
+
+/**
+ * Represents a session with its child sessions (for branched conversations).
+ */
+export interface SessionNode {
+  session: SessionInfo;
+  children: SessionNode[];
+}
+
+/**
+ * Represents a project (directory) containing multiple sessions.
+ */
+export interface ProjectInfo {
+  id: string;
+  path: string; // e.g., '/Users/.../opencode'
+  sessions: SessionNode[];
+}
 
 interface SessionState {
-  // Session data
+  // Session data (single session - existing)
   session: Session | null;
   isLoading: boolean;
   error: string | null;
 
+  // Multi-session state (new)
+  fileSystem: VirtualFileSystem | null;
+  projects: ProjectInfo[];
+  sessionTree: SessionNode[];
+  allSessions: Record<string, SessionInfo>;
+  selectedSessionId: string | null;
+  isLoadingFolder: boolean;
+  isLoadingSession: boolean;
+  loadError: string | null;
+
   // UI state
   sidebarOpen: boolean;
 
-  // Actions
+  // Actions (existing - single file loading)
   loadSession: (file: File) => Promise<void>;
   loadSessionFromUrl: (url: string) => Promise<void>;
   loadSessionFromData: (data: Session) => void;
@@ -19,6 +47,12 @@ interface SessionState {
   setError: (error: string) => void;
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
+
+  // Actions (new - multi-session)
+  setFileSystem: (fs: VirtualFileSystem) => void;
+  setProjects: (projects: ProjectInfo[]) => void;
+  selectSession: (sessionId: string) => Promise<void>;
+  clearFolder: () => void;
 }
 
 /**
@@ -69,11 +103,23 @@ function validateSessionData(data: unknown): data is Session {
   );
 }
 
-export const useSessionStore = create<SessionState>((set) => ({
-  // Initial state
+export const useSessionStore = create<SessionState>((set, get) => ({
+  // Initial state (single session - existing)
   session: null,
   isLoading: false,
   error: null,
+
+  // Initial state (multi-session - new)
+  fileSystem: null,
+  projects: [],
+  sessionTree: [],
+  allSessions: {},
+  selectedSessionId: null,
+  isLoadingFolder: false,
+  isLoadingSession: false,
+  loadError: null,
+
+  // UI state
   sidebarOpen: true,
 
   // Load session from a File object
@@ -153,5 +199,85 @@ export const useSessionStore = create<SessionState>((set) => ({
 
   toggleSidebar: () => {
     set((state) => ({ sidebarOpen: !state.sidebarOpen }));
+  },
+
+  // Multi-session actions (new)
+  setFileSystem: (fs: VirtualFileSystem) => {
+    set({ fileSystem: fs });
+  },
+
+  setProjects: (projects: ProjectInfo[]) => {
+    // Build allSessions record from all projects
+    const allSessions: Record<string, SessionInfo> = {};
+    const collectSessions = (nodes: SessionNode[]) => {
+      for (const node of nodes) {
+        allSessions[node.session.id] = node.session;
+        collectSessions(node.children);
+      }
+    };
+
+    for (const project of projects) {
+      collectSessions(project.sessions);
+    }
+
+    // Build flat sessionTree from all projects
+    const sessionTree: SessionNode[] = projects.flatMap((p) => p.sessions);
+
+    set({ projects, allSessions, sessionTree, loadError: null });
+  },
+
+  selectSession: async (sessionId: string) => {
+    const state = get();
+    const sessionInfo = state.allSessions[sessionId];
+
+    if (!sessionInfo) {
+      set({ loadError: `Session not found: ${sessionId}` });
+      return;
+    }
+
+    set({ isLoadingSession: true, loadError: null, selectedSessionId: sessionId });
+
+    try {
+      // If we have a file system, load the full session data
+      if (state.fileSystem) {
+        const sessionPath = ['session', sessionInfo.projectID, `${sessionId}.json`];
+        const content = await state.fileSystem.readFile(sessionPath);
+
+        if (!content) {
+          throw new Error(`Session file not found: ${sessionPath.join('/')}`);
+        }
+
+        const data: unknown = JSON.parse(content);
+        if (!validateSessionData(data)) {
+          throw new Error('Invalid session format: missing info or messages');
+        }
+
+        set({
+          session: data,
+          isLoadingSession: false,
+          loadError: null,
+        });
+      } else {
+        // No file system - just update the selected session ID
+        set({ isLoadingSession: false });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load session';
+      set({ isLoadingSession: false, loadError: message });
+    }
+  },
+
+  clearFolder: () => {
+    set({
+      fileSystem: null,
+      projects: [],
+      sessionTree: [],
+      allSessions: {},
+      selectedSessionId: null,
+      session: null,
+      isLoadingFolder: false,
+      isLoadingSession: false,
+      loadError: null,
+    });
   },
 }));
