@@ -14,6 +14,9 @@ import {
   isDragDropSupported,
   getDirectoryFromDrop,
   validateDirectoryDrop,
+  createFileSystemFromHandle,
+  createFileSystemFromDropped,
+  type VirtualFileSystem,
 } from './fileSystem';
 
 // Mock FileSystemFileHandle
@@ -739,5 +742,366 @@ describe('validateDirectoryDrop', () => {
     if (result.isValid) {
       expect(result.entry).toBe(dirEntry);
     }
+  });
+});
+
+// ============================================================================
+// VirtualFileSystem Tests
+// ============================================================================
+
+describe('createFileSystemFromHandle', () => {
+  it('reads file content from root directory', async () => {
+    const file = createMockFileHandle('test.txt', 'Hello World');
+    const root = createMockDirectoryHandle('root', new Map([['test.txt', file]]));
+
+    const vfs: VirtualFileSystem = createFileSystemFromHandle(root);
+    const content = await vfs.readFile(['test.txt']);
+
+    expect(content).toBe('Hello World');
+  });
+
+  it('reads file content from nested directory', async () => {
+    const deepFile = createMockFileHandle('data.json', '{"key": "value"}');
+    const subDir = createMockDirectoryHandle('session', new Map([['data.json', deepFile]]));
+    const root = createMockDirectoryHandle('root', new Map([['session', subDir]]));
+
+    const vfs: VirtualFileSystem = createFileSystemFromHandle(root);
+    const content = await vfs.readFile(['session', 'data.json']);
+
+    expect(content).toBe('{"key": "value"}');
+  });
+
+  it('returns null for missing file', async () => {
+    const root = createMockDirectoryHandle('root', new Map());
+
+    const vfs: VirtualFileSystem = createFileSystemFromHandle(root);
+    const content = await vfs.readFile(['nonexistent.txt']);
+
+    expect(content).toBeNull();
+  });
+
+  it('returns null when trying to read directory as file', async () => {
+    const subDir = createMockDirectoryHandle('subdir', new Map());
+    const root = createMockDirectoryHandle('root', new Map([['subdir', subDir]]));
+
+    const vfs: VirtualFileSystem = createFileSystemFromHandle(root);
+    const content = await vfs.readFile(['subdir']);
+
+    expect(content).toBeNull();
+  });
+
+  it('returns null for empty path (root)', async () => {
+    const root = createMockDirectoryHandle('root', new Map());
+
+    const vfs: VirtualFileSystem = createFileSystemFromHandle(root);
+    const content = await vfs.readFile([]);
+
+    expect(content).toBeNull();
+  });
+
+  it('lists entries in root directory', async () => {
+    const file = createMockFileHandle('file.txt', 'content');
+    const subDir = createMockDirectoryHandle('subdir', new Map());
+    const root = createMockDirectoryHandle(
+      'root',
+      new Map<string, FileSystemHandle>([
+        ['file.txt', file],
+        ['subdir', subDir],
+      ])
+    );
+
+    const vfs: VirtualFileSystem = createFileSystemFromHandle(root);
+    const entries = await vfs.listDirectory([]);
+
+    expect(entries).toHaveLength(2);
+    expect(entries).toContain('file.txt');
+    expect(entries).toContain('subdir');
+  });
+
+  it('lists entries in nested directory', async () => {
+    const deepFile = createMockFileHandle('deep.txt', 'content');
+    const subDir = createMockDirectoryHandle('subdir', new Map([['deep.txt', deepFile]]));
+    const root = createMockDirectoryHandle('root', new Map([['subdir', subDir]]));
+
+    const vfs: VirtualFileSystem = createFileSystemFromHandle(root);
+    const entries = await vfs.listDirectory(['subdir']);
+
+    expect(entries).toHaveLength(1);
+    expect(entries).toContain('deep.txt');
+  });
+
+  it('returns empty array for missing directory', async () => {
+    const root = createMockDirectoryHandle('root', new Map());
+
+    const vfs: VirtualFileSystem = createFileSystemFromHandle(root);
+    const entries = await vfs.listDirectory(['nonexistent']);
+
+    expect(entries).toHaveLength(0);
+  });
+
+  it('returns empty array when listing a file', async () => {
+    const file = createMockFileHandle('file.txt', 'content');
+    const root = createMockDirectoryHandle('root', new Map([['file.txt', file]]));
+
+    const vfs: VirtualFileSystem = createFileSystemFromHandle(root);
+    const entries = await vfs.listDirectory(['file.txt']);
+
+    expect(entries).toHaveLength(0);
+  });
+
+  it('checks existence of file', async () => {
+    const file = createMockFileHandle('test.txt', 'content');
+    const root = createMockDirectoryHandle('root', new Map([['test.txt', file]]));
+
+    const vfs: VirtualFileSystem = createFileSystemFromHandle(root);
+
+    expect(await vfs.exists(['test.txt'])).toBe(true);
+    expect(await vfs.exists(['nonexistent.txt'])).toBe(false);
+  });
+
+  it('checks existence of directory', async () => {
+    const subDir = createMockDirectoryHandle('subdir', new Map());
+    const root = createMockDirectoryHandle('root', new Map([['subdir', subDir]]));
+
+    const vfs: VirtualFileSystem = createFileSystemFromHandle(root);
+
+    expect(await vfs.exists(['subdir'])).toBe(true);
+    expect(await vfs.exists(['nonexistent'])).toBe(false);
+  });
+
+  it('exists returns true for root path', async () => {
+    const root = createMockDirectoryHandle('root', new Map());
+
+    const vfs: VirtualFileSystem = createFileSystemFromHandle(root);
+
+    expect(await vfs.exists([])).toBe(true);
+  });
+});
+
+describe('createFileSystemFromDropped', () => {
+  it('reads file content', async () => {
+    const files = new Map([['test.txt', 'Hello World']]);
+
+    const vfs: VirtualFileSystem = createFileSystemFromDropped(files);
+    const content = await vfs.readFile(['test.txt']);
+
+    expect(content).toBe('Hello World');
+  });
+
+  it('reads file content from nested path', async () => {
+    const files = new Map([['session/project1/data.json', '{"key": "value"}']]);
+
+    const vfs: VirtualFileSystem = createFileSystemFromDropped(files);
+    const content = await vfs.readFile(['session', 'project1', 'data.json']);
+
+    expect(content).toBe('{"key": "value"}');
+  });
+
+  it('returns null for missing file', async () => {
+    const files = new Map<string, string>();
+
+    const vfs: VirtualFileSystem = createFileSystemFromDropped(files);
+    const content = await vfs.readFile(['nonexistent.txt']);
+
+    expect(content).toBeNull();
+  });
+
+  it('returns null for empty path (root)', async () => {
+    const files = new Map([['file.txt', 'content']]);
+
+    const vfs: VirtualFileSystem = createFileSystemFromDropped(files);
+    const content = await vfs.readFile([]);
+
+    expect(content).toBeNull();
+  });
+
+  it('lists entries in root directory', async () => {
+    const files = new Map([
+      ['file1.txt', 'content1'],
+      ['file2.txt', 'content2'],
+      ['subdir/nested.txt', 'nested content'],
+    ]);
+
+    const vfs: VirtualFileSystem = createFileSystemFromDropped(files);
+    const entries = await vfs.listDirectory([]);
+
+    expect(entries).toHaveLength(3);
+    expect(entries).toContain('file1.txt');
+    expect(entries).toContain('file2.txt');
+    expect(entries).toContain('subdir');
+  });
+
+  it('lists entries in nested directory', async () => {
+    const files = new Map([
+      ['subdir/file1.txt', 'content1'],
+      ['subdir/file2.txt', 'content2'],
+      ['subdir/deep/nested.txt', 'nested'],
+    ]);
+
+    const vfs: VirtualFileSystem = createFileSystemFromDropped(files);
+    const entries = await vfs.listDirectory(['subdir']);
+
+    expect(entries).toHaveLength(3);
+    expect(entries).toContain('file1.txt');
+    expect(entries).toContain('file2.txt');
+    expect(entries).toContain('deep');
+  });
+
+  it('returns empty array for missing directory', async () => {
+    const files = new Map([['file.txt', 'content']]);
+
+    const vfs: VirtualFileSystem = createFileSystemFromDropped(files);
+    const entries = await vfs.listDirectory(['nonexistent']);
+
+    expect(entries).toHaveLength(0);
+  });
+
+  it('returns empty array for file path (not directory)', async () => {
+    const files = new Map([['file.txt', 'content']]);
+
+    const vfs: VirtualFileSystem = createFileSystemFromDropped(files);
+    const entries = await vfs.listDirectory(['file.txt']);
+
+    expect(entries).toHaveLength(0);
+  });
+
+  it('checks existence of file', async () => {
+    const files = new Map([['test.txt', 'content']]);
+
+    const vfs: VirtualFileSystem = createFileSystemFromDropped(files);
+
+    expect(await vfs.exists(['test.txt'])).toBe(true);
+    expect(await vfs.exists(['nonexistent.txt'])).toBe(false);
+  });
+
+  it('checks existence of directory', async () => {
+    const files = new Map([['subdir/file.txt', 'content']]);
+
+    const vfs: VirtualFileSystem = createFileSystemFromDropped(files);
+
+    expect(await vfs.exists(['subdir'])).toBe(true);
+    expect(await vfs.exists(['nonexistent'])).toBe(false);
+  });
+
+  it('exists returns true for root path', async () => {
+    const files = new Map([['file.txt', 'content']]);
+
+    const vfs: VirtualFileSystem = createFileSystemFromDropped(files);
+
+    expect(await vfs.exists([])).toBe(true);
+  });
+
+  it('checks existence of deeply nested directory', async () => {
+    const files = new Map([['level1/level2/level3/file.txt', 'content']]);
+
+    const vfs: VirtualFileSystem = createFileSystemFromDropped(files);
+
+    expect(await vfs.exists(['level1'])).toBe(true);
+    expect(await vfs.exists(['level1', 'level2'])).toBe(true);
+    expect(await vfs.exists(['level1', 'level2', 'level3'])).toBe(true);
+    expect(await vfs.exists(['level1', 'level2', 'level3', 'file.txt'])).toBe(true);
+  });
+});
+
+describe('VirtualFileSystem API consistency', () => {
+  // Tests that verify both implementations behave the same way
+
+  it('both implementations return null for missing files', async () => {
+    const handleRoot = createMockDirectoryHandle('root', new Map());
+    const handleVfs = createFileSystemFromHandle(handleRoot);
+
+    const droppedVfs = createFileSystemFromDropped(new Map());
+
+    expect(await handleVfs.readFile(['missing.txt'])).toBeNull();
+    expect(await droppedVfs.readFile(['missing.txt'])).toBeNull();
+  });
+
+  it('both implementations return empty array for missing directories', async () => {
+    const handleRoot = createMockDirectoryHandle('root', new Map());
+    const handleVfs = createFileSystemFromHandle(handleRoot);
+
+    const droppedVfs = createFileSystemFromDropped(new Map());
+
+    expect(await handleVfs.listDirectory(['missing'])).toEqual([]);
+    expect(await droppedVfs.listDirectory(['missing'])).toEqual([]);
+  });
+
+  it('both implementations return true for root existence', async () => {
+    const handleRoot = createMockDirectoryHandle('root', new Map());
+    const handleVfs = createFileSystemFromHandle(handleRoot);
+
+    const droppedVfs = createFileSystemFromDropped(new Map());
+
+    expect(await handleVfs.exists([])).toBe(true);
+    expect(await droppedVfs.exists([])).toBe(true);
+  });
+
+  it('both implementations return empty array when listing a file path', async () => {
+    // Handle-based
+    const file = createMockFileHandle('test.txt', 'content');
+    const handleRoot = createMockDirectoryHandle('root', new Map([['test.txt', file]]));
+    const handleVfs = createFileSystemFromHandle(handleRoot);
+
+    // Dropped-based
+    const droppedVfs = createFileSystemFromDropped(new Map([['test.txt', 'content']]));
+
+    expect(await handleVfs.listDirectory(['test.txt'])).toEqual([]);
+    expect(await droppedVfs.listDirectory(['test.txt'])).toEqual([]);
+  });
+});
+
+describe('createFileSystemFromDropped edge cases', () => {
+  it('returns empty array when file path conflicts with directory lookup', async () => {
+    // This tests the edge case where a path is both a file and could be treated as a directory
+    // The implementation should treat it as a file (return empty for listDirectory)
+    const files = new Map([
+      ['a', 'file content'],
+      ['a/b', 'nested content'], // This is technically inconsistent input
+    ]);
+
+    const vfs = createFileSystemFromDropped(files);
+
+    // 'a' is a file, so listDirectory should return empty
+    expect(await vfs.listDirectory(['a'])).toEqual([]);
+
+    // But 'a' exists as a file
+    expect(await vfs.exists(['a'])).toBe(true);
+    expect(await vfs.readFile(['a'])).toBe('file content');
+  });
+
+  it('handles paths with special characters in segment names', async () => {
+    const files = new Map([
+      ['folder with spaces/file.txt', 'content1'],
+      ['folder-with-dashes/file.txt', 'content2'],
+      ['folder_with_underscores/file.txt', 'content3'],
+    ]);
+
+    const vfs = createFileSystemFromDropped(files);
+
+    expect(await vfs.exists(['folder with spaces'])).toBe(true);
+    expect(await vfs.readFile(['folder with spaces', 'file.txt'])).toBe('content1');
+    expect(await vfs.listDirectory([])).toContain('folder with spaces');
+  });
+
+  it('handles empty files map correctly', async () => {
+    const vfs = createFileSystemFromDropped(new Map());
+
+    expect(await vfs.exists([])).toBe(true); // Root always exists
+    expect(await vfs.listDirectory([])).toEqual([]);
+    expect(await vfs.readFile(['anything'])).toBeNull();
+  });
+
+  it('does not confuse similar directory names', async () => {
+    const files = new Map([
+      ['abc/file.txt', 'content1'],
+      ['ab/file.txt', 'content2'],
+    ]);
+
+    const vfs = createFileSystemFromDropped(files);
+
+    // 'ab' should only list its own children, not 'abc' children
+    const abEntries = await vfs.listDirectory(['ab']);
+    expect(abEntries).toEqual(['file.txt']);
+    expect(abEntries).not.toContain('c'); // Should not contain parts of 'abc'
   });
 });

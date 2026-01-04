@@ -614,3 +614,169 @@ export function validateDirectoryDrop(event: DragEventLike): DirectoryDropValida
 
   return { isValid: true, entry: entry as FileSystemDirectoryEntry };
 }
+
+// ============================================================================
+// Virtual File System Abstraction
+// ============================================================================
+
+/**
+ * Unified interface for file system access that works with both
+ * File System Access API (Chromium) and drag-drop (Firefox/Safari).
+ *
+ * Error handling:
+ * - Missing paths return null/empty array/false (no throws)
+ * - Permission errors may throw FileSystemError (handle-based implementation only)
+ */
+export interface VirtualFileSystem {
+  /**
+   * Reads a file at the given path.
+   * @param path - Array of path segments (e.g., ['session', 'projectId', 'session.json'])
+   * @returns The file content as a string, or null if not found
+   * @throws FileSystemError for permission errors (handle-based implementation)
+   */
+  readFile(path: string[]): Promise<string | null>;
+
+  /**
+   * Lists entries in a directory.
+   * @param path - Array of path segments to the directory
+   * @returns Array of entry names in the directory, empty if path is not a directory
+   * @throws FileSystemError for permission errors (handle-based implementation)
+   */
+  listDirectory(path: string[]): Promise<string[]>;
+
+  /**
+   * Checks if a path exists (file or directory).
+   * @param path - Array of path segments
+   * @returns true if the path exists, false otherwise
+   * @throws FileSystemError for permission errors (handle-based implementation)
+   */
+  exists(path: string[]): Promise<boolean>;
+}
+
+/**
+ * Creates a VirtualFileSystem from a FileSystemDirectoryHandle.
+ * Use this for Chromium browsers with File System Access API support.
+ *
+ * @param handle - The root directory handle
+ * @returns A VirtualFileSystem backed by the File System Access API
+ */
+export function createFileSystemFromHandle(
+  handle: FileSystemDirectoryHandle
+): VirtualFileSystem {
+  return {
+    async readFile(path: string[]): Promise<string | null> {
+      if (path.length === 0) {
+        return null; // Cannot read a directory as a file
+      }
+
+      const result = await tryResolvePath(handle, path);
+      if (!result.found || !result.file) {
+        return null;
+      }
+
+      return readFile(result.file);
+    },
+
+    async listDirectory(path: string[]): Promise<string[]> {
+      const result = await tryResolvePath(handle, path);
+      if (!result.found) {
+        return [];
+      }
+
+      // If we resolved to a file, not a directory, return empty
+      if (result.file) {
+        return [];
+      }
+
+      const entries = await listDirectory(result.directory);
+      return entries.map((e) => e.name);
+    },
+
+    async exists(path: string[]): Promise<boolean> {
+      const result = await tryResolvePath(handle, path);
+      return result.found;
+    },
+  };
+}
+
+/**
+ * Creates a VirtualFileSystem from a Map of file paths to contents.
+ * Use this for Firefox/Safari with drag-drop directory reading.
+ *
+ * @param files - Map of relative paths (e.g., 'dir/file.txt') to file contents
+ * @returns A VirtualFileSystem backed by the in-memory file map
+ */
+export function createFileSystemFromDropped(
+  files: Map<string, string>
+): VirtualFileSystem {
+  // Build a set of all directory paths for efficient lookups
+  const directories = new Set<string>();
+  directories.add(''); // Root directory always exists
+
+  for (const filePath of files.keys()) {
+    const segments = filePath.split('/');
+    // Add all parent directories
+    for (let i = 1; i < segments.length; i++) {
+      directories.add(segments.slice(0, i).join('/'));
+    }
+  }
+
+  return {
+    async readFile(path: string[]): Promise<string | null> {
+      if (path.length === 0) {
+        return null; // Cannot read root as a file
+      }
+
+      const pathString = path.join('/');
+      return files.get(pathString) ?? null;
+    },
+
+    async listDirectory(path: string[]): Promise<string[]> {
+      const pathString = path.join('/');
+
+      // If path points to a file (not a directory), return empty
+      if (files.has(pathString)) {
+        return [];
+      }
+
+      // If path is not root and doesn't exist as a directory, return empty
+      if (pathString !== '' && !directories.has(pathString)) {
+        return [];
+      }
+
+      const prefix = pathString === '' ? '' : pathString + '/';
+      const entries = new Set<string>();
+
+      // Check files that start with this directory path
+      for (const filePath of files.keys()) {
+        if (pathString === '' || filePath.startsWith(prefix)) {
+          // Get the relative part after the prefix
+          const relativePath = pathString === '' ? filePath : filePath.slice(prefix.length);
+          // Get the first segment (immediate child)
+          const firstSegment = relativePath.split('/')[0];
+          if (firstSegment) {
+            entries.add(firstSegment);
+          }
+        }
+      }
+
+      return Array.from(entries);
+    },
+
+    async exists(path: string[]): Promise<boolean> {
+      if (path.length === 0) {
+        return true; // Root always exists
+      }
+
+      const pathString = path.join('/');
+
+      // Check if it's a file
+      if (files.has(pathString)) {
+        return true;
+      }
+
+      // Check if it's a directory
+      return directories.has(pathString);
+    },
+  };
+}
