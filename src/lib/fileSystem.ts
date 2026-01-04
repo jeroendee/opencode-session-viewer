@@ -1,5 +1,6 @@
 /**
- * File System Access API implementation for Chromium browsers.
+ * File System Access API implementation for Chromium browsers,
+ * with drag-drop fallback for Firefox/Safari.
  * Provides functions to open a directory picker and read files/directories.
  */
 
@@ -335,4 +336,281 @@ export async function tryResolvePath(
   }
 
   return { found: false, directory: null, file: null };
+}
+
+// ============================================================================
+// Drag-Drop Fallback API (for Firefox/Safari)
+// ============================================================================
+
+/**
+ * Options for limiting the size of dropped directory reads.
+ */
+export interface ReadDirectoryLimits {
+  /** Maximum number of files to read (default: 10000) */
+  maxFiles?: number;
+  /** Maximum size of a single file in bytes (default: 10MB) */
+  maxFileBytes?: number;
+  /** Maximum total bytes across all files (default: 100MB) */
+  maxTotalBytes?: number;
+}
+
+const DEFAULT_LIMITS: Required<ReadDirectoryLimits> = {
+  maxFiles: 10000,
+  maxFileBytes: 10 * 1024 * 1024, // 10MB per file
+  maxTotalBytes: 100 * 1024 * 1024, // 100MB total
+};
+
+/**
+ * Result from reading a dropped directory.
+ * Maps file paths to their contents.
+ */
+export interface DroppedDirectoryContents {
+  /** The name of the root directory that was dropped */
+  rootName: string;
+  /** Map of relative paths to file contents */
+  files: Map<string, string>;
+  /** Number of files skipped due to size limits */
+  skippedFiles?: number;
+  /** Whether more files exist but weren't read due to limits */
+  truncated?: boolean;
+}
+
+/**
+ * Helper to read all entries from a DirectoryReader.
+ * The readEntries method only returns a batch at a time, so we need to call it
+ * repeatedly until we get an empty array.
+ */
+async function readAllEntries(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
+  const allEntries: FileSystemEntry[] = [];
+
+  // readEntries returns entries in batches, need to keep calling until empty
+  const readBatch = (): Promise<FileSystemEntry[]> => {
+    return new Promise((resolve, reject) => {
+      reader.readEntries(resolve, reject);
+    });
+  };
+
+  let batch = await readBatch();
+  while (batch.length > 0) {
+    allEntries.push(...batch);
+    batch = await readBatch();
+  }
+
+  return allEntries;
+}
+
+/**
+ * Reads a file from a FileSystemFileEntry.
+ */
+async function readFileEntry(entry: FileSystemFileEntry): Promise<File> {
+  return new Promise((resolve, reject) => {
+    entry.file(resolve, reject);
+  });
+}
+
+/**
+ * Recursively reads all files from a dropped directory.
+ * Uses the webkitGetAsEntry API which works in Firefox and Safari.
+ *
+ * @param entry - The FileSystemDirectoryEntry from the drop event
+ * @param limits - Optional limits to prevent memory issues with large directories
+ * @returns Object containing the root directory name and a map of file paths to contents
+ * @throws FileSystemError if reading fails
+ */
+export async function readDroppedDirectory(
+  entry: FileSystemDirectoryEntry,
+  limits: ReadDirectoryLimits = {}
+): Promise<DroppedDirectoryContents> {
+  const mergedLimits: Required<ReadDirectoryLimits> = { ...DEFAULT_LIMITS, ...limits };
+  const files = new Map<string, string>();
+  let totalBytes = 0;
+  let skippedFiles = 0;
+  let truncated = false;
+
+  async function processEntry(currentEntry: FileSystemEntry, currentPath: string): Promise<void> {
+    // Check file count limit
+    if (files.size >= mergedLimits.maxFiles) {
+      truncated = true;
+      return;
+    }
+
+    if (currentEntry.isFile) {
+      try {
+        const fileEntry = currentEntry as FileSystemFileEntry;
+        const file = await readFileEntry(fileEntry);
+
+        // Check file size limit
+        if (file.size > mergedLimits.maxFileBytes) {
+          skippedFiles++;
+          return;
+        }
+
+        // Check total size limit
+        if (totalBytes + file.size > mergedLimits.maxTotalBytes) {
+          truncated = true;
+          return;
+        }
+
+        const content = await file.text();
+        files.set(currentPath, content);
+        totalBytes += file.size;
+      } catch (error) {
+        throw new FileSystemError(
+          `Failed to read file '${currentPath}': ${error instanceof Error ? error.message : 'Unknown error'}`,
+          'UNKNOWN'
+        );
+      }
+    } else if (currentEntry.isDirectory) {
+      const dirEntry = currentEntry as FileSystemDirectoryEntry;
+      const reader = dirEntry.createReader();
+
+      try {
+        const entries = await readAllEntries(reader);
+        for (const childEntry of entries) {
+          // Stop early if we've hit limits
+          if (truncated) break;
+
+          const childPath = currentPath ? `${currentPath}/${childEntry.name}` : childEntry.name;
+          await processEntry(childEntry, childPath);
+        }
+      } catch (error) {
+        throw new FileSystemError(
+          `Failed to read directory '${currentPath}': ${error instanceof Error ? error.message : 'Unknown error'}`,
+          'UNKNOWN'
+        );
+      }
+    }
+  }
+
+  // Start processing from the root directory's contents (not including root in path)
+  const reader = entry.createReader();
+  try {
+    const entries = await readAllEntries(reader);
+    for (const childEntry of entries) {
+      // Stop early if we've hit limits
+      if (truncated) break;
+
+      await processEntry(childEntry, childEntry.name);
+    }
+  } catch (error) {
+    throw new FileSystemError(
+      `Failed to read dropped directory: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      'UNKNOWN'
+    );
+  }
+
+  return {
+    rootName: entry.name,
+    files,
+    skippedFiles: skippedFiles > 0 ? skippedFiles : undefined,
+    truncated: truncated ? true : undefined,
+  };
+}
+
+/**
+ * Check if drag-drop directory reading is supported.
+ * This uses the webkitGetAsEntry API which is available in most browsers.
+ */
+export function isDragDropSupported(): boolean {
+  try {
+    // Safe feature detection with optional chaining
+    const proto = (globalThis as { DataTransferItem?: { prototype?: unknown } }).DataTransferItem
+      ?.prototype as { webkitGetAsEntry?: unknown } | undefined;
+    return !!proto && typeof proto.webkitGetAsEntry === 'function';
+  } catch {
+    // If any error occurs during detection, assume not supported
+    return false;
+  }
+}
+
+/**
+ * Extracts a FileSystemDirectoryEntry from a DragEvent.
+ * Returns null if the dropped item is not a directory.
+ *
+ * @param event - The drop event
+ * @returns The FileSystemDirectoryEntry, or null if not a directory
+ * @throws FileSystemError if no valid directory was dropped
+ */
+export function getDirectoryFromDrop(event: DragEvent): FileSystemDirectoryEntry | null {
+  const items = event.dataTransfer?.items;
+  if (!items || items.length === 0) {
+    return null;
+  }
+
+  // Get the first item
+  const item = items[0];
+  if (item.kind !== 'file') {
+    return null;
+  }
+
+  // Use webkitGetAsEntry to get the file system entry
+  const entry = item.webkitGetAsEntry();
+  if (!entry) {
+    return null;
+  }
+
+  if (!entry.isDirectory) {
+    return null;
+  }
+
+  return entry as FileSystemDirectoryEntry;
+}
+
+/**
+ * Result type for successful directory validation.
+ */
+export interface ValidDirectoryDrop {
+  isValid: true;
+  entry: FileSystemDirectoryEntry;
+}
+
+/**
+ * Result type for failed directory validation.
+ */
+export interface InvalidDirectoryDrop {
+  isValid: false;
+  error: string;
+}
+
+export type DirectoryDropValidation = ValidDirectoryDrop | InvalidDirectoryDrop;
+
+/**
+ * Minimal interface for drag events that works with both native DragEvent and React.DragEvent.
+ */
+interface DragEventLike {
+  dataTransfer?: DataTransfer | null;
+}
+
+/**
+ * Validates that a drop event contains a directory, not a file.
+ * Works with both native DragEvent and React.DragEvent.
+ *
+ * @param event - The drop event to validate (native or React)
+ * @returns Object with isValid and either the entry or an error message
+ */
+export function validateDirectoryDrop(event: DragEventLike): DirectoryDropValidation {
+  const items = event.dataTransfer?.items;
+  if (!items || items.length === 0) {
+    return { isValid: false, error: 'No items were dropped' };
+  }
+
+  if (items.length > 1) {
+    return { isValid: false, error: 'Please drop only one folder at a time' };
+  }
+
+  const item = items[0];
+  if (item.kind !== 'file') {
+    return { isValid: false, error: 'Dropped item is not a file or folder' };
+  }
+
+  const entry = item.webkitGetAsEntry();
+  if (!entry) {
+    return { isValid: false, error: 'Could not read dropped item' };
+  }
+
+  if (!entry.isDirectory) {
+    return { isValid: false, error: 'Please drop a folder, not a file' };
+  }
+
+  return { isValid: true, entry: entry as FileSystemDirectoryEntry };
 }

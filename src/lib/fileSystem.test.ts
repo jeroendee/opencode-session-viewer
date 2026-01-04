@@ -10,6 +10,10 @@ import {
   listDirectory,
   resolvePath,
   tryResolvePath,
+  readDroppedDirectory,
+  isDragDropSupported,
+  getDirectoryFromDrop,
+  validateDirectoryDrop,
 } from './fileSystem';
 
 // Mock FileSystemFileHandle
@@ -454,6 +458,286 @@ describe('tryResolvePath', () => {
     if (result.found) {
       expect(result.directory).toBe(subDir);
       expect(result.file).toBeNull();
+    }
+  });
+});
+
+// ============================================================================
+// Drag-Drop API Tests
+// ============================================================================
+
+// Mock FileSystemDirectoryEntry for drag-drop
+function createMockFileSystemFileEntry(
+  name: string,
+  content: string
+): FileSystemFileEntry {
+  // Create a mock file with proper text() method
+  const mockFile = {
+    name,
+    text: () => Promise.resolve(content),
+    arrayBuffer: () => Promise.resolve(new ArrayBuffer(content.length)),
+    slice: vi.fn(),
+    stream: vi.fn(),
+    size: content.length,
+    type: 'text/plain',
+    lastModified: Date.now(),
+  } as unknown as File;
+
+  return {
+    isFile: true,
+    isDirectory: false,
+    name,
+    fullPath: `/${name}`,
+    filesystem: {} as FileSystem,
+    file: (callback: FileCallback) => callback(mockFile),
+    getParent: vi.fn(),
+  } as unknown as FileSystemFileEntry;
+}
+
+function createMockFileSystemDirectoryEntry(
+  name: string,
+  entries: FileSystemEntry[]
+): FileSystemDirectoryEntry {
+  let readCalled = false;
+  return {
+    isFile: false,
+    isDirectory: true,
+    name,
+    fullPath: `/${name}`,
+    filesystem: {} as FileSystem,
+    createReader: () => ({
+      readEntries: (successCallback: FileSystemEntriesCallback) => {
+        // First call returns entries, second call returns empty array
+        if (!readCalled) {
+          readCalled = true;
+          successCallback(entries);
+        } else {
+          successCallback([]);
+        }
+      },
+    }),
+    getFile: vi.fn(),
+    getDirectory: vi.fn(),
+    getParent: vi.fn(),
+  } as unknown as FileSystemDirectoryEntry;
+}
+
+describe('isDragDropSupported', () => {
+  const originalDataTransferItem = globalThis.DataTransferItem;
+
+  afterEach(() => {
+    // Restore original
+    if (originalDataTransferItem) {
+      (globalThis as Record<string, unknown>).DataTransferItem = originalDataTransferItem;
+    } else {
+      delete (globalThis as Record<string, unknown>).DataTransferItem;
+    }
+  });
+
+  it('returns true when webkitGetAsEntry is available', () => {
+    // Mock DataTransferItem with webkitGetAsEntry
+    (globalThis as Record<string, unknown>).DataTransferItem = class {
+      webkitGetAsEntry() {
+        return null;
+      }
+    };
+
+    expect(isDragDropSupported()).toBe(true);
+  });
+
+  it('returns false when DataTransferItem is undefined', () => {
+    delete (globalThis as Record<string, unknown>).DataTransferItem;
+    expect(isDragDropSupported()).toBe(false);
+  });
+
+  it('returns false when webkitGetAsEntry is not available', () => {
+    // Mock DataTransferItem without webkitGetAsEntry
+    (globalThis as Record<string, unknown>).DataTransferItem = class {};
+
+    expect(isDragDropSupported()).toBe(false);
+  });
+});
+
+describe('readDroppedDirectory', () => {
+  it('reads files from a flat directory', async () => {
+    const file1 = createMockFileSystemFileEntry('file1.txt', 'content1');
+    const file2 = createMockFileSystemFileEntry('file2.json', '{"key": "value"}');
+    const rootDir = createMockFileSystemDirectoryEntry('root', [file1, file2]);
+
+    const result = await readDroppedDirectory(rootDir);
+
+    expect(result.rootName).toBe('root');
+    expect(result.files.size).toBe(2);
+    expect(result.files.get('file1.txt')).toBe('content1');
+    expect(result.files.get('file2.json')).toBe('{"key": "value"}');
+  });
+
+  it('reads files from nested directories', async () => {
+    const deepFile = createMockFileSystemFileEntry('deep.txt', 'deep content');
+    const subDir = createMockFileSystemDirectoryEntry('subdir', [deepFile]);
+    const rootFile = createMockFileSystemFileEntry('root.txt', 'root content');
+    const rootDir = createMockFileSystemDirectoryEntry('root', [rootFile, subDir]);
+
+    const result = await readDroppedDirectory(rootDir);
+
+    expect(result.rootName).toBe('root');
+    expect(result.files.size).toBe(2);
+    expect(result.files.get('root.txt')).toBe('root content');
+    expect(result.files.get('subdir/deep.txt')).toBe('deep content');
+  });
+
+  it('handles empty directories', async () => {
+    const rootDir = createMockFileSystemDirectoryEntry('empty', []);
+
+    const result = await readDroppedDirectory(rootDir);
+
+    expect(result.rootName).toBe('empty');
+    expect(result.files.size).toBe(0);
+  });
+
+  it('handles deeply nested directories', async () => {
+    const deepFile = createMockFileSystemFileEntry('file.txt', 'content');
+    const level3 = createMockFileSystemDirectoryEntry('level3', [deepFile]);
+    const level2 = createMockFileSystemDirectoryEntry('level2', [level3]);
+    const level1 = createMockFileSystemDirectoryEntry('level1', [level2]);
+    const root = createMockFileSystemDirectoryEntry('root', [level1]);
+
+    const result = await readDroppedDirectory(root);
+
+    expect(result.rootName).toBe('root');
+    expect(result.files.size).toBe(1);
+    expect(result.files.get('level1/level2/level3/file.txt')).toBe('content');
+  });
+});
+
+describe('getDirectoryFromDrop', () => {
+  it('returns null when dataTransfer is undefined', () => {
+    const event = { dataTransfer: undefined } as unknown as DragEvent;
+    expect(getDirectoryFromDrop(event)).toBeNull();
+  });
+
+  it('returns null when items is empty', () => {
+    const event = {
+      dataTransfer: {
+        items: { length: 0 },
+      },
+    } as unknown as DragEvent;
+    expect(getDirectoryFromDrop(event)).toBeNull();
+  });
+
+  it('returns null when item is not a file', () => {
+    const event = {
+      dataTransfer: {
+        items: {
+          0: { kind: 'string' },
+          length: 1,
+        },
+      },
+    } as unknown as DragEvent;
+    expect(getDirectoryFromDrop(event)).toBeNull();
+  });
+
+  it('returns null when webkitGetAsEntry returns null', () => {
+    const event = {
+      dataTransfer: {
+        items: {
+          0: { kind: 'file', webkitGetAsEntry: () => null },
+          length: 1,
+        },
+      },
+    } as unknown as DragEvent;
+    expect(getDirectoryFromDrop(event)).toBeNull();
+  });
+
+  it('returns null when entry is a file, not a directory', () => {
+    const fileEntry = createMockFileSystemFileEntry('file.txt', 'content');
+    const event = {
+      dataTransfer: {
+        items: {
+          0: { kind: 'file', webkitGetAsEntry: () => fileEntry },
+          length: 1,
+        },
+      },
+    } as unknown as DragEvent;
+    expect(getDirectoryFromDrop(event)).toBeNull();
+  });
+
+  it('returns directory entry when valid directory is dropped', () => {
+    const dirEntry = createMockFileSystemDirectoryEntry('folder', []);
+    const event = {
+      dataTransfer: {
+        items: {
+          0: { kind: 'file', webkitGetAsEntry: () => dirEntry },
+          length: 1,
+        },
+      },
+    } as unknown as DragEvent;
+    expect(getDirectoryFromDrop(event)).toBe(dirEntry);
+  });
+});
+
+describe('validateDirectoryDrop', () => {
+  it('returns error when no items are dropped', () => {
+    const event = { dataTransfer: { items: { length: 0 } } } as unknown as DragEvent;
+    const result = validateDirectoryDrop(event);
+
+    expect(result.isValid).toBe(false);
+    if (!result.isValid) {
+      expect(result.error).toBe('No items were dropped');
+    }
+  });
+
+  it('returns error when multiple items are dropped', () => {
+    const event = {
+      dataTransfer: {
+        items: {
+          0: {},
+          1: {},
+          length: 2,
+        },
+      },
+    } as unknown as DragEvent;
+    const result = validateDirectoryDrop(event);
+
+    expect(result.isValid).toBe(false);
+    if (!result.isValid) {
+      expect(result.error).toBe('Please drop only one folder at a time');
+    }
+  });
+
+  it('returns error when a file is dropped instead of a folder', () => {
+    const fileEntry = createMockFileSystemFileEntry('file.txt', 'content');
+    const event = {
+      dataTransfer: {
+        items: {
+          0: { kind: 'file', webkitGetAsEntry: () => fileEntry },
+          length: 1,
+        },
+      },
+    } as unknown as DragEvent;
+    const result = validateDirectoryDrop(event);
+
+    expect(result.isValid).toBe(false);
+    if (!result.isValid) {
+      expect(result.error).toBe('Please drop a folder, not a file');
+    }
+  });
+
+  it('returns valid with entry when folder is dropped', () => {
+    const dirEntry = createMockFileSystemDirectoryEntry('folder', []);
+    const event = {
+      dataTransfer: {
+        items: {
+          0: { kind: 'file', webkitGetAsEntry: () => dirEntry },
+          length: 1,
+        },
+      },
+    } as unknown as DragEvent;
+    const result = validateDirectoryDrop(event);
+
+    expect(result.isValid).toBe(true);
+    if (result.isValid) {
+      expect(result.entry).toBe(dirEntry);
     }
   });
 });
