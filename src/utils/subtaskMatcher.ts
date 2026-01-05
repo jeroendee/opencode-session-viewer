@@ -1,9 +1,8 @@
-import type { SessionNode } from '../store/sessionStore';
-import type { SubtaskPart } from '../types/session';
+import type { SessionInfo, SubtaskPart } from '../types/session';
 
 /**
- * Parses a child session title to extract agent type and description.
- * Child session titles follow the pattern: "Description (@agent subagent)"
+ * Parses a session title to extract agent type and description.
+ * Session titles spawned by subtasks follow the pattern: "Description (@agent subagent)"
  * 
  * @param title - The session title to parse
  * @returns Parsed info or null if title doesn't match pattern
@@ -22,22 +21,22 @@ export function parseChildSessionTitle(title: string): { agent: string; descript
 }
 
 /**
- * Finds the child session that was spawned by a SubtaskPart.
- * Matches by comparing the agent type and description.
+ * Finds the session that was spawned by a SubtaskPart.
+ * Searches all sessions for one whose title matches the subtask's agent and description.
  * 
  * @param subtask - The SubtaskPart to find the spawned session for
- * @param childSessions - Array of child SessionNodes to search
- * @returns The matching SessionNode or undefined if not found
+ * @param allSessions - Record of all sessions keyed by ID
+ * @returns The matching SessionInfo or undefined if not found
  */
 export function findSpawnedSession(
   subtask: SubtaskPart,
-  childSessions: SessionNode[]
-): SessionNode | undefined {
+  allSessions: Record<string, SessionInfo>
+): SessionInfo | undefined {
   const normalizedSubtaskAgent = subtask.agent.toLowerCase();
   const normalizedSubtaskDescription = subtask.description.toLowerCase().trim();
   
-  for (const child of childSessions) {
-    const parsed = parseChildSessionTitle(child.session.title);
+  for (const session of Object.values(allSessions)) {
+    const parsed = parseChildSessionTitle(session.title);
     if (!parsed) {
       continue;
     }
@@ -52,7 +51,7 @@ export function findSpawnedSession(
     if (normalizedChildDescription === normalizedSubtaskDescription ||
         normalizedChildDescription.startsWith(normalizedSubtaskDescription) ||
         normalizedSubtaskDescription.startsWith(normalizedChildDescription)) {
-      return child;
+      return session;
     }
   }
   
@@ -60,16 +59,16 @@ export function findSpawnedSession(
 }
 
 /**
- * Gets the session ID of the child session spawned by a SubtaskPart.
+ * Gets the session ID of the session spawned by a SubtaskPart.
  * 
  * @param subtask - The SubtaskPart to find the spawned session for
- * @param childSessions - Array of child SessionNodes to search
+ * @param allSessions - Record of all sessions keyed by ID
  * @returns The session ID or undefined if not found
  */
 export function getSpawnedSessionId(
   subtask: SubtaskPart,
-  childSessions: SessionNode[]
+  allSessions: Record<string, SessionInfo>
 ): string | undefined {
-  const session = findSpawnedSession(subtask, childSessions);
-  return session?.session.id;
+  const session = findSpawnedSession(subtask, allSessions);
+  return session?.id;
 }

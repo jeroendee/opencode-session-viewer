@@ -458,12 +458,6 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
   const dateGroups = useMemo(() => {
     return groupSessionsByDate(projects);
   }, [projects]);
-  
-  // Helper to check if a node or any of its children match the search
-  const nodeMatchesSearch = useCallback((node: SessionNode, ids: Set<string>): boolean => {
-    if (ids.has(node.session.id)) return true;
-    return node.children.some((child) => nodeMatchesSearch(child, ids));
-  }, []);
 
   // Helper to filter a node tree, keeping nodes that match or have matching descendants
   const filterNodeTree = useCallback((node: SessionNode, ids: Set<string>): SessionNode | null => {

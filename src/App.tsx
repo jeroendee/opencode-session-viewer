@@ -12,14 +12,12 @@ import { useNavigation } from './hooks/useNavigation';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { groupMessages } from './utils/groupMessages';
 import { SessionNavigationProvider } from './contexts/SessionNavigationContext';
-import { getChildSessions } from './utils/sessionTreeUtils';
 
 function App() {
   const { 
     fileSystem, 
     session, 
-    sessionTree,
-    selectedSessionId,
+    allSessions,
     selectSession,
     sidebarOpen, 
     setSidebarOpen, 
@@ -34,13 +32,7 @@ function App() {
     return session ? groupMessages(session.messages) : [];
   }, [session]);
 
-  // Get child sessions for the currently selected session
-  const childSessions = useMemo(() => {
-    if (!selectedSessionId) return [];
-    return getChildSessions(sessionTree, selectedSessionId);
-  }, [sessionTree, selectedSessionId]);
-
-  // Handle navigation to a child session
+  // Handle navigation to a session
   const handleNavigateToSession = useCallback((sessionId: string) => {
     selectSession(sessionId);
   }, [selectSession]);
@@ -127,7 +119,7 @@ function App() {
             <SkeletonContent />
           ) : session ? (
             <SessionNavigationProvider
-              childSessions={childSessions}
+              allSessions={allSessions}
               onNavigateToSession={handleNavigateToSession}
             >
               <MessageList />

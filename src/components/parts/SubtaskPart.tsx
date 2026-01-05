@@ -35,13 +35,14 @@ export function SubtaskPart({ part }: SubtaskPartProps) {
   const sessionNav = useSessionNavigation();
 
   // Find the spawned session ID for this subtask
+  // Searches all sessions for a matching title pattern
   const spawnedSessionId = useMemo(() => {
-    if (!sessionNav) return undefined;
-    return getSpawnedSessionId(part, sessionNav.childSessions);
-  }, [part, sessionNav]);
+    if (!sessionNav || Object.keys(sessionNav.allSessions).length === 0) return undefined;
+    return getSpawnedSessionId(part, sessionNav.allSessions);
+  }, [part.agent, part.description, sessionNav?.allSessions]);
 
   const AgentIcon = getAgentIcon(part.agent);
-  const hasLinkedSession = spawnedSessionId && sessionNav;
+  const hasLinkedSession = Boolean(spawnedSessionId && sessionNav);
 
   const handleNavigate = (e: React.MouseEvent) => {
     e.stopPropagation();

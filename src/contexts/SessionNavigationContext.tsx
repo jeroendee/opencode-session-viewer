@@ -1,9 +1,9 @@
-import { createContext, useContext, type ReactNode } from 'react';
-import type { SessionNode } from '../store/sessionStore';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import type { SessionInfo } from '../types/session';
 
 interface SessionNavigationContextValue {
-  /** Child sessions for the currently viewed session */
-  childSessions: SessionNode[];
+  /** All available sessions for matching subtasks to spawned sessions */
+  allSessions: Record<string, SessionInfo>;
   /** Navigate to a different session */
   navigateToSession: (sessionId: string) => void;
 }
@@ -12,26 +12,30 @@ const SessionNavigationContext = createContext<SessionNavigationContextValue | n
 
 interface SessionNavigationProviderProps {
   children: ReactNode;
-  childSessions: SessionNode[];
+  allSessions: Record<string, SessionInfo>;
   onNavigateToSession: (sessionId: string) => void;
 }
 
 /**
  * Provider for session navigation context.
- * Allows deep components like SubtaskPart to navigate to child sessions.
+ * Allows deep components like SubtaskPart to navigate to spawned sessions.
  */
 export function SessionNavigationProvider({
   children,
-  childSessions,
+  allSessions,
   onNavigateToSession,
 }: SessionNavigationProviderProps) {
+  // Memoize context value to prevent unnecessary rerenders of consumers
+  const contextValue = useMemo(
+    () => ({
+      allSessions,
+      navigateToSession: onNavigateToSession,
+    }),
+    [allSessions, onNavigateToSession]
+  );
+
   return (
-    <SessionNavigationContext.Provider
-      value={{
-        childSessions,
-        navigateToSession: onNavigateToSession,
-      }}
-    >
+    <SessionNavigationContext.Provider value={contextValue}>
       {children}
     </SessionNavigationContext.Provider>
   );
