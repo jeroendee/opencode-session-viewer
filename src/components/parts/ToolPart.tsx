@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react';
-import { Check, X, Loader2, ChevronDown, ChevronRight, Clock, ExternalLink } from 'lucide-react';
+import { Check, X, Loader2, ChevronDown, ChevronRight, Clock } from 'lucide-react';
 import type { ToolPart as ToolPartType } from '../../types/session';
 import { isToolCompleted, isToolError } from '../../types/session';
 import { ToolIcon } from './toolIcons';
 import { formatDurationCompact } from '../../utils/formatters';
 import { useSessionNavigation } from '../../contexts/SessionNavigationContext';
 import { findSpawnedSession } from '../../utils/subtaskMatcher';
+import { EmbeddedSession } from './EmbeddedSession';
 
 interface ToolPartProps {
   part: ToolPartType;
@@ -88,12 +89,7 @@ export function ToolPart({ part }: ToolPartProps) {
     return findSpawnedSession(pseudoSubtask, sessionNav.allSessions);
   }, [part.tool, part.id, part.sessionID, part.messageID, sessionNav?.allSessions, state, hasDetails]);
 
-  const handleViewSession = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (spawnedSession && sessionNav) {
-      sessionNav.navigateToSession(spawnedSession.id);
-    }
-  };
+
 
   return (
     <div className="my-2">
@@ -179,33 +175,18 @@ export function ToolPart({ part }: ToolPartProps) {
             </div>
           )}
 
-          {/* Duration and View Session button */}
-          <div className="flex items-center justify-between">
-            {duration !== undefined && (
-              <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-                <Clock className="w-3 h-3" />
-                <span>Duration: {formatDurationCompact(duration)}</span>
-              </div>
-            )}
-            
-            {/* View Session button for task tools */}
-            {spawnedSession && (
-              <button
-                onClick={handleViewSession}
-                className="
-                  inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md
-                  bg-blue-100 dark:bg-blue-900/50
-                  text-blue-700 dark:text-blue-300
-                  hover:bg-blue-200 dark:hover:bg-blue-800
-                  text-sm font-medium transition-colors
-                "
-                aria-label={`View session: ${spawnedSession.title}`}
-              >
-                <ExternalLink className="w-4 h-4" />
-                <span>View Session</span>
-              </button>
-            )}
-          </div>
+          {/* Duration */}
+          {duration !== undefined && (
+            <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+              <Clock className="w-3 h-3" />
+              <span>Duration: {formatDurationCompact(duration)}</span>
+            </div>
+          )}
+
+          {/* Embedded session for task tools */}
+          {spawnedSession && (
+            <EmbeddedSession sessionInfo={spawnedSession} />
+          )}
         </div>
       )}
     </div>

@@ -120,6 +120,7 @@ function App() {
           ) : session ? (
             <SessionNavigationProvider
               allSessions={allSessions}
+              fileSystem={fileSystem}
               onNavigateToSession={handleNavigateToSession}
             >
               <MessageList />
