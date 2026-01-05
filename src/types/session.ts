@@ -271,3 +271,7 @@ export function isToolCompleted(state: ToolState): state is ToolPartCompleted {
 export function isToolError(state: ToolState): state is ToolPartError {
   return state.status === 'error';
 }
+
+export function isSubtaskPart(part: Part): part is SubtaskPart {
+  return part.type === 'subtask';
+}

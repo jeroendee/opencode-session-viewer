@@ -1,9 +1,10 @@
 import type { Part } from '../../types/session';
-import { isTextPart, isToolPart, isReasoningPart, isFilePart } from '../../types/session';
+import { isTextPart, isToolPart, isReasoningPart, isFilePart, isSubtaskPart } from '../../types/session';
 import { TextPart } from './TextPart';
 import { ToolPart } from './ToolPart';
 import { ReasoningPart } from './ReasoningPart';
 import { FilePart } from './FilePart';
+import { SubtaskPart } from './SubtaskPart';
 
 interface PartRendererProps {
   part: Part;
@@ -28,6 +29,10 @@ export function PartRenderer({ part }: PartRendererProps) {
 
   if (isFilePart(part)) {
     return <FilePart part={part} />;
+  }
+
+  if (isSubtaskPart(part)) {
+    return <SubtaskPart part={part} />;
   }
 
   // Skip step-start, step-finish, and other meta parts in display
