@@ -128,14 +128,20 @@ describe('SessionBrowser', () => {
       expect(screen.getByText('1')).toBeInTheDocument();
     });
 
-    it('renders sessions when project is expanded', () => {
+    it('renders sessions when directory is expanded', () => {
       render(<SessionBrowser sidebarOpen={true} />);
 
-      // Projects start expanded by default
+      // Directories start collapsed by default - sessions should not be visible
+      expect(screen.queryByText('Implement feature X')).not.toBeInTheDocument();
+
+      // Click to expand the opencode directory
+      const opencodeButton = screen.getByRole('button', { name: /Expand opencode/i });
+      fireEvent.click(opencodeButton);
+
+      // Now sessions should be visible
       expect(screen.getByText('Implement feature X')).toBeInTheDocument();
       expect(screen.getByText('Explore implementation')).toBeInTheDocument();
       expect(screen.getByText('Fix bug Y')).toBeInTheDocument();
-      expect(screen.getByText('Refactor code')).toBeInTheDocument();
     });
 
     it('renders Change Folder button', () => {
@@ -165,65 +171,58 @@ describe('SessionBrowser', () => {
   });
 
   describe('expand/collapse', () => {
-    it('collapses a project when clicking on it', () => {
+    it('expands and collapses a directory when clicking on it', () => {
       render(<SessionBrowser sidebarOpen={true} />);
 
-      // Sessions should be visible initially
-      expect(screen.getByText('Implement feature X')).toBeInTheDocument();
+      // Directories start collapsed - sessions should not be visible
+      expect(screen.queryByText('Implement feature X')).not.toBeInTheDocument();
 
-      // Click to collapse the opencode project
-      const opencodeButton = screen.getByRole('button', { name: /Collapse opencode/i });
+      // Click to expand the opencode directory
+      const opencodeButton = screen.getByRole('button', { name: /Expand opencode/i });
       fireEvent.click(opencodeButton);
 
-      // Sessions from opencode should be hidden
-      expect(screen.queryByText('Implement feature X')).not.toBeInTheDocument();
-      expect(screen.queryByText('Fix bug Y')).not.toBeInTheDocument();
+      // Sessions from opencode should now be visible
+      expect(screen.getByText('Implement feature X')).toBeInTheDocument();
+      expect(screen.getByText('Fix bug Y')).toBeInTheDocument();
 
-      // Sessions from other-project should still be visible
-      expect(screen.getByText('Refactor code')).toBeInTheDocument();
+      // Click to collapse it again
+      const collapseButton = screen.getByRole('button', { name: /Collapse opencode/i });
+      fireEvent.click(collapseButton);
+
+      // Sessions should be hidden again
+      expect(screen.queryByText('Implement feature X')).not.toBeInTheDocument();
     });
 
-    it('expands a collapsed project when clicking on it', () => {
+    it('maintains expand state independently for each directory', () => {
       render(<SessionBrowser sidebarOpen={true} />);
 
-      // Collapse first
-      const opencodeButton = screen.getByRole('button', { name: /Collapse opencode/i });
+      // Expand opencode
+      const opencodeButton = screen.getByRole('button', { name: /Expand opencode/i });
       fireEvent.click(opencodeButton);
 
-      expect(screen.queryByText('Implement feature X')).not.toBeInTheDocument();
-
-      // Expand again
-      const expandButton = screen.getByRole('button', { name: /Expand opencode/i });
-      fireEvent.click(expandButton);
-
+      // opencode sessions visible
       expect(screen.getByText('Implement feature X')).toBeInTheDocument();
-    });
 
-    it('maintains expand state independently for each project', () => {
-      render(<SessionBrowser sidebarOpen={true} />);
+      // other-project sessions still hidden
+      expect(screen.queryByText('Refactor code')).not.toBeInTheDocument();
 
-      // Collapse opencode
-      const opencodeButton = screen.getByRole('button', { name: /Collapse opencode/i });
-      fireEvent.click(opencodeButton);
-
-      // opencode sessions hidden
-      expect(screen.queryByText('Implement feature X')).not.toBeInTheDocument();
-
-      // other-project sessions still visible
-      expect(screen.getByText('Refactor code')).toBeInTheDocument();
-
-      // Collapse other-project
-      const otherButton = screen.getByRole('button', { name: /Collapse other-project/i });
+      // Expand other-project
+      const otherButton = screen.getByRole('button', { name: /Expand other-project/i });
       fireEvent.click(otherButton);
 
-      // other-project sessions now hidden
-      expect(screen.queryByText('Refactor code')).not.toBeInTheDocument();
+      // Both directories' sessions now visible
+      expect(screen.getByText('Implement feature X')).toBeInTheDocument();
+      expect(screen.getByText('Refactor code')).toBeInTheDocument();
     });
   });
 
   describe('session selection', () => {
     it('calls selectSession when clicking a session', () => {
       render(<SessionBrowser sidebarOpen={true} />);
+
+      // First expand the directory
+      const opencodeButton = screen.getByRole('button', { name: /Expand opencode/i });
+      fireEvent.click(opencodeButton);
 
       const sessionButton = screen.getByRole('button', { name: 'Implement feature X' });
       fireEvent.click(sessionButton);
@@ -233,6 +232,10 @@ describe('SessionBrowser', () => {
 
     it('calls selectSession for nested child sessions', () => {
       render(<SessionBrowser sidebarOpen={true} />);
+
+      // First expand the directory
+      const opencodeButton = screen.getByRole('button', { name: /Expand opencode/i });
+      fireEvent.click(opencodeButton);
 
       const childSession = screen.getByRole('button', { name: 'Explore implementation' });
       fireEvent.click(childSession);
@@ -249,6 +252,10 @@ describe('SessionBrowser', () => {
       } as ReturnType<typeof useSessionStore>);
 
       render(<SessionBrowser sidebarOpen={true} />);
+
+      // First expand the directory
+      const opencodeButton = screen.getByRole('button', { name: /Expand opencode/i });
+      fireEvent.click(opencodeButton);
 
       const selectedButton = screen.getByRole('button', { name: 'Implement feature X' });
       expect(selectedButton).toHaveAttribute('aria-current', 'true');
@@ -277,6 +284,10 @@ describe('SessionBrowser', () => {
       const mockCloseSidebar = vi.fn();
       render(<SessionBrowser sidebarOpen={true} onCloseSidebar={mockCloseSidebar} />);
 
+      // First expand the directory
+      const opencodeButton = screen.getByRole('button', { name: /Expand opencode/i });
+      fireEvent.click(opencodeButton);
+
       const sessionButton = screen.getByRole('button', { name: 'Implement feature X' });
       fireEvent.click(sessionButton);
 
@@ -287,6 +298,10 @@ describe('SessionBrowser', () => {
       // Default matchMedia mock returns false (desktop)
       const mockCloseSidebar = vi.fn();
       render(<SessionBrowser sidebarOpen={true} onCloseSidebar={mockCloseSidebar} />);
+
+      // First expand the directory
+      const opencodeButton = screen.getByRole('button', { name: /Expand opencode/i });
+      fireEvent.click(opencodeButton);
 
       const sessionButton = screen.getByRole('button', { name: 'Implement feature X' });
       fireEvent.click(sessionButton);
@@ -331,11 +346,16 @@ describe('SessionBrowser', () => {
     });
   });
 
-  describe('project expansion sync', () => {
-    it('expands new projects when they are added', () => {
+  describe('directory expansion sync', () => {
+    it('keeps directories collapsed when new ones are added', () => {
       const { rerender } = render(<SessionBrowser sidebarOpen={true} />);
 
-      // Initial state: sessions visible
+      // Initial state: directories collapsed, sessions not visible
+      expect(screen.queryByText('Implement feature X')).not.toBeInTheDocument();
+
+      // Expand opencode directory
+      const opencodeButton = screen.getByRole('button', { name: /Expand opencode/i });
+      fireEvent.click(opencodeButton);
       expect(screen.getByText('Implement feature X')).toBeInTheDocument();
 
       // Add a new project via store update
@@ -369,8 +389,10 @@ describe('SessionBrowser', () => {
 
       rerender(<SessionBrowser sidebarOpen={true} />);
 
-      // New project should be expanded by default
-      expect(screen.getByText('New session')).toBeInTheDocument();
+      // New directory is collapsed, session not visible
+      expect(screen.queryByText('New session')).not.toBeInTheDocument();
+      // Previously expanded directory still shows its sessions
+      expect(screen.getByText('Implement feature X')).toBeInTheDocument();
     });
   });
 
@@ -402,6 +424,10 @@ describe('SessionBrowser', () => {
       } as ReturnType<typeof useSessionStore>);
 
       render(<SessionBrowser sidebarOpen={true} />);
+
+      // First expand the directory
+      const testButton = screen.getByRole('button', { name: /Expand test/i });
+      fireEvent.click(testButton);
 
       expect(screen.getByText('Untitled Session')).toBeInTheDocument();
     });

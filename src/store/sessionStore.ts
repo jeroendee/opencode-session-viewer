@@ -161,8 +161,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   isLoadingMessages: false,
   loadError: null,
 
-  // UI state - sidebar starts collapsed
-  sidebarOpen: false,
+  // UI state - sidebar visible by default
+  sidebarOpen: true,
 
   // Load session from a File object
   loadSession: async (file: File) => {

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Search, ChevronRight, ChevronDown, FolderOpen, Calendar } from 'lucide-react';
+import { Search, ChevronRight, ChevronDown, FolderOpen, Calendar, ChevronsUpDown } from 'lucide-react';
 import { useSessionStore, type DirectoryGroup, type YearGroup, type MonthGroup, type DayGroup } from '../store/sessionStore';
 import { groupSessionsByDirectory, groupSessionsByDate } from '../lib/sessionLoader';
 import { useSidebarPreferences, type GroupingMode } from '../hooks/useSidebarPreferences';
@@ -408,61 +408,65 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
     return groupSessionsByDate(projects);
   }, [projects]);
 
-  // Expanded state for directory groups
-  const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => {
-    return new Set(directoryGroups.map((g) => g.directory));
-  });
+  // Expanded state for directory groups - collapsed by default
+  const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => new Set());
 
-  // Expanded state for date groups (years, months, days)
-  const [expandedYears, setExpandedYears] = useState<Set<number>>(() => {
-    // Expand the first (most recent) year by default
-    return new Set(dateGroups.slice(0, 1).map((g) => g.year));
-  });
-  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(() => {
-    // Expand the first month of the first year by default
-    if (dateGroups.length > 0 && dateGroups[0].months.length > 0) {
-      return new Set([`${dateGroups[0].year}-${dateGroups[0].months[0].month}`]);
-    }
-    return new Set();
-  });
-  const [expandedDays, setExpandedDays] = useState<Set<string>>(() => {
-    // Expand the first day by default
-    if (dateGroups.length > 0 && dateGroups[0].months.length > 0 && dateGroups[0].months[0].days.length > 0) {
-      const firstDay = dateGroups[0].months[0].days[0];
-      return new Set([`${dateGroups[0].months[0].month}-${firstDay.day}`]);
-    }
-    return new Set();
-  });
+  // Expanded state for date groups (years, months, days) - all collapsed by default
+  const [expandedYears, setExpandedYears] = useState<Set<number>>(() => new Set());
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(() => new Set());
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(() => new Set());
 
-  // Sync expanded directories when groups change
+  // Sync expanded directories when groups change - keep existing expanded state
   useEffect(() => {
     setExpandedDirectories((prev) => {
       const currentDirectories = new Set(directoryGroups.map((g) => g.directory));
+      // Only keep directories that still exist
       const next = new Set<string>();
-
-      for (const dir of currentDirectories) {
-        if (prev.has(dir)) {
-          next.add(dir);
-        } else if (prev.size === 0 || !Array.from(prev).some((prevDir) => currentDirectories.has(prevDir))) {
-          next.add(dir);
-        } else {
+      for (const dir of prev) {
+        if (currentDirectories.has(dir)) {
           next.add(dir);
         }
       }
-
       return next;
     });
   }, [directoryGroups]);
 
-  // Sync expanded years when date groups change
-  useEffect(() => {
-    setExpandedYears((prev) => {
-      if (prev.size === 0 && dateGroups.length > 0) {
-        return new Set([dateGroups[0].year]);
+  // Check if any groups are expanded
+  const hasExpandedGroups = useMemo(() => {
+    if (groupingMode === 'directory') {
+      return expandedDirectories.size > 0;
+    }
+    return expandedYears.size > 0 || expandedMonths.size > 0 || expandedDays.size > 0;
+  }, [groupingMode, expandedDirectories, expandedYears, expandedMonths, expandedDays]);
+
+  // Collapse all groups
+  const handleCollapseAll = useCallback(() => {
+    setExpandedDirectories(new Set());
+    setExpandedYears(new Set());
+    setExpandedMonths(new Set());
+    setExpandedDays(new Set());
+  }, []);
+
+  // Expand all groups
+  const handleExpandAll = useCallback(() => {
+    if (groupingMode === 'directory') {
+      setExpandedDirectories(new Set(directoryGroups.map((g) => g.directory)));
+    } else {
+      setExpandedYears(new Set(dateGroups.map((g) => g.year)));
+      const allMonths = new Set<string>();
+      const allDays = new Set<string>();
+      for (const year of dateGroups) {
+        for (const month of year.months) {
+          allMonths.add(`${year.year}-${month.month}`);
+          for (const day of month.days) {
+            allDays.add(`${month.month}-${day.day}`);
+          }
+        }
       }
-      return prev;
-    });
-  }, [dateGroups]);
+      setExpandedMonths(allMonths);
+      setExpandedDays(allDays);
+    }
+  }, [groupingMode, directoryGroups, dateGroups]);
 
   const handleToggleDirectory = useCallback((directory: string) => {
     setExpandedDirectories((prev) => {
@@ -578,9 +582,19 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
 
       {/* Session list */}
       <div className="flex-1 overflow-y-auto p-4">
-        <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-          {groupingMode === 'directory' ? 'Directories' : 'Timeline'}
-        </h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            {groupingMode === 'directory' ? 'Directories' : 'Timeline'}
+          </h3>
+          <button
+            onClick={hasExpandedGroups ? handleCollapseAll : handleExpandAll}
+            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded transition-colors"
+            aria-label={hasExpandedGroups ? 'Collapse all' : 'Expand all'}
+            title={hasExpandedGroups ? 'Collapse all' : 'Expand all'}
+          >
+            <ChevronsUpDown className="w-4 h-4" />
+          </button>
+        </div>
         {isLoadingFolder ? (
           <div className="flex flex-col items-center justify-center py-8">
             <LoadingSpinner label="Loading sessions..." />
