@@ -5,17 +5,28 @@ import { SessionBrowser } from './components/SessionBrowser';
 import { FolderPicker } from './components/FolderPicker';
 import { SelectSessionPrompt } from './components/SelectSessionPrompt';
 import { MessageList } from './components/MessageList';
-import { SubAgentTree } from './components/SubAgentTree';
 import { KeyboardShortcutsHelp } from './components/KeyboardShortcutsHelp';
 import { SkeletonContent } from './components/SkeletonLoader';
 import { useSessionStore } from './store/sessionStore';
 import { useNavigation } from './hooks/useNavigation';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { groupMessages } from './utils/groupMessages';
+import { SessionNavigationProvider } from './contexts/SessionNavigationContext';
 import { getChildSessions } from './utils/sessionTreeUtils';
 
 function App() {
-  const { fileSystem, session, sidebarOpen, setSidebarOpen, toggleSidebar, isLoadingSession, browseForFolder, sessionTree, selectedSessionId, selectSession } = useSessionStore();
+  const { 
+    fileSystem, 
+    session, 
+    sessionTree,
+    selectedSessionId,
+    selectSession,
+    sidebarOpen, 
+    setSidebarOpen, 
+    toggleSidebar, 
+    isLoadingSession, 
+    browseForFolder 
+  } = useSessionStore();
   const { activeMessageId, scrollToMessage } = useNavigation();
   const messageSidebarRef = useRef<MessageSidebarHandle>(null);
 
@@ -23,14 +34,14 @@ function App() {
     return session ? groupMessages(session.messages) : [];
   }, [session]);
 
-  // Get child sessions for the current session
+  // Get child sessions for the currently selected session
   const childSessions = useMemo(() => {
     if (!selectedSessionId) return [];
     return getChildSessions(sessionTree, selectedSessionId);
   }, [sessionTree, selectedSessionId]);
 
-  // Handler for navigating to a sub-agent session
-  const handleNavigateToSubAgent = useCallback((sessionId: string) => {
+  // Handle navigation to a child session
+  const handleNavigateToSession = useCallback((sessionId: string) => {
     selectSession(sessionId);
   }, [selectSession]);
 
@@ -115,19 +126,12 @@ function App() {
           {isLoadingSession ? (
             <SkeletonContent />
           ) : session ? (
-            <div className="flex-1 overflow-y-auto">
-              {/* Sub-agent tree shown above messages when session has children */}
-              {childSessions.length > 0 && selectedSessionId && (
-                <div className="px-4 pt-4">
-                  <SubAgentTree
-                    sessionId={selectedSessionId}
-                    childSessions={childSessions}
-                    onNavigate={handleNavigateToSubAgent}
-                  />
-                </div>
-              )}
+            <SessionNavigationProvider
+              childSessions={childSessions}
+              onNavigateToSession={handleNavigateToSession}
+            >
               <MessageList />
-            </div>
+            </SessionNavigationProvider>
           ) : (
             <SelectSessionPrompt />
           )}
