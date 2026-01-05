@@ -1,40 +1,14 @@
 import { useState, useCallback, useEffect, type MouseEvent, type KeyboardEvent } from 'react';
-import { ChevronRight, ChevronDown, Search, CheckCircle, Bot, Wrench } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { ChevronRight, ChevronDown } from 'lucide-react';
 import type { SessionNode } from '../store/sessionStore';
 import { formatRelativeTime } from '../utils/formatters';
+import { parseSubAgentTitle } from '../utils/subAgentParsing';
 
 export interface SessionTreeProps {
   nodes: SessionNode[];
   selectedId: string | null;
   onSelect: (sessionId: string) => void;
   depth?: number;
-}
-
-/**
- * Maps sub-agent names to their icons.
- */
-const subAgentIconMap: Record<string, LucideIcon> = {
-  explore: Search,
-  'code-reviewer': CheckCircle,
-  'code-review': CheckCircle,
-  task: Bot,
-};
-
-/**
- * Parses a session title to detect sub-agent patterns.
- * Pattern: "@<agent-name> subagent: <description>"
- * 
- * @returns { icon, displayTitle } if it's a sub-agent session, null otherwise
- */
-function parseSubAgentTitle(title: string): { icon: LucideIcon; displayTitle: string } | null {
-  const match = title.match(/^@(\S+)\s+subagent:\s*(.+)$/i);
-  if (!match) return null;
-
-  const [, agentName, description] = match;
-  const icon = subAgentIconMap[agentName.toLowerCase()] || Wrench;
-  
-  return { icon, displayTitle: description.trim() };
 }
 
 /**
