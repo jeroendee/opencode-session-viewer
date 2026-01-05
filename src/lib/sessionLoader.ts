@@ -1,6 +1,7 @@
 import type { VirtualFileSystem } from './fileSystem';
 import type { Session, SessionInfo, Message, MessageInfo, Part, TextPart } from '../types/session';
 import type { ProjectInfo, SessionNode } from '../store/sessionStore';
+import { StorageError } from './errors';
 
 /**
  * Result of loading all sessions from storage.
@@ -9,6 +10,8 @@ export interface LoadSessionsResult {
   projects: ProjectInfo[];
   sessions: Record<string, SessionInfo>;
   errorCount: number;
+  /** Number of circular parent references that were detected and broken */
+  circularRefCount?: number;
 }
 
 /**
@@ -19,21 +22,94 @@ interface ProjectMetadata {
 }
 
 /**
+ * Result of building a session tree, including any detected issues.
+ */
+interface BuildSessionTreeResult {
+  roots: SessionNode[];
+  /** Number of circular parent references that were detected and broken */
+  circularRefCount: number;
+}
+
+/**
  * Builds a tree of session nodes from a flat list of sessions.
  * Sessions with parentID become children of their parent session.
+ * Detects and breaks circular parent references to prevent infinite loops.
  */
-function buildSessionTree(sessions: SessionInfo[]): SessionNode[] {
+function buildSessionTree(sessions: SessionInfo[]): BuildSessionTreeResult {
   const nodeMap = new Map<string, SessionNode>();
   const roots: SessionNode[] = [];
+  let circularRefCount = 0;
 
   // Create nodes for all sessions
   for (const session of sessions) {
     nodeMap.set(session.id, { session, children: [] });
   }
 
-  // Build parent-child relationships
+  // Build parent lookup for O(1) access
+  const parentOf = new Map<string, string | undefined>();
+  for (const session of sessions) {
+    parentOf.set(session.id, session.parentID);
+  }
+
+  // Track which nodes have cyclic parent references (O(n) total)
+  // A node is cyclic if following its parent chain eventually leads back to itself
+  const cycleBreakPoints = new Set<string>();
+  const visited = new Set<string>();
+
+  // For each node, check if it's part of a cycle by following parent chain
+  for (const session of sessions) {
+    if (visited.has(session.id)) continue;
+
+    const path: string[] = [];
+    const pathSet = new Set<string>();
+    let current: string | undefined = session.id;
+
+    // Follow parent chain
+    while (current && nodeMap.has(current) && !visited.has(current)) {
+      if (pathSet.has(current)) {
+        // Found cycle - mark all nodes in the cycle as break points
+        // The cycle starts at 'current' and includes everything after it in path
+        const cycleStartIdx = path.indexOf(current);
+        for (let i = cycleStartIdx; i < path.length; i++) {
+          cycleBreakPoints.add(path[i]);
+        }
+        break;
+      }
+
+      path.push(current);
+      pathSet.add(current);
+      current = parentOf.get(current);
+    }
+
+    // Mark all nodes in path as visited
+    for (const id of path) {
+      visited.add(id);
+    }
+  }
+
+  // Second pass: build parent-child relationships, breaking at cycle points
   for (const session of sessions) {
     const node = nodeMap.get(session.id)!;
+
+    // Check for self-reference
+    if (session.parentID === session.id) {
+      console.warn(`Session ${session.id} has self-referential parentID, treating as root`);
+      circularRefCount++;
+      roots.push(node);
+      continue;
+    }
+
+    // Check if this is a cycle break point
+    if (cycleBreakPoints.has(session.id)) {
+      console.warn(
+        `Circular parent reference detected for session ${session.id}, treating as root`
+      );
+      circularRefCount++;
+      roots.push(node);
+      continue;
+    }
+
+    // Check if this session has a valid parent
     if (session.parentID && nodeMap.has(session.parentID)) {
       nodeMap.get(session.parentID)!.children.push(node);
     } else {
@@ -54,7 +130,7 @@ function buildSessionTree(sessions: SessionInfo[]): SessionNode[] {
   }
   roots.sort(sortRootsByUpdated);
 
-  return roots;
+  return { roots, circularRefCount };
 }
 
 /**
@@ -112,11 +188,23 @@ export async function loadAllSessions(
     projectIds = await fs.listDirectory(['session']);
   } catch (error) {
     console.warn(`Failed to list session directory: ${error}`);
-    return { projects, sessions, errorCount: 1 };
+    throw new StorageError(
+      'Could not find session directory. This may not be an OpenCode storage folder.',
+      'NOT_STORAGE_FOLDER'
+    );
   }
 
+  // Check if the session directory is empty
+  if (projectIds.length === 0) {
+    // Don't throw, just return empty - the caller decides if this is an error
+    return { projects, sessions, errorCount: 0 };
+  }
+
+  // Result type for individual project loading
+  type ProjectLoadResult = { project: ProjectInfo; circularRefCount: number } | null;
+
   // Load projects in parallel, catching errors per project
-  const projectPromises = projectIds.map(async (projectId): Promise<ProjectInfo | null> => {
+  const projectPromises = projectIds.map(async (projectId): Promise<ProjectLoadResult> => {
     try {
       // Load project metadata
       let projectJsonContent: string | null = null;
@@ -191,13 +279,16 @@ export async function loadAllSessions(
       }
 
       // Build session tree for this project
-      const sessionTree = buildSessionTree(projectSessions);
+      const treeResult = buildSessionTree(projectSessions);
 
       return {
-        id: projectId,
-        path: projectPath,
-        sessions: sessionTree,
-      } satisfies ProjectInfo;
+        project: {
+          id: projectId,
+          path: projectPath,
+          sessions: treeResult.roots,
+        } satisfies ProjectInfo,
+        circularRefCount: treeResult.circularRefCount,
+      };
     } catch (error) {
       console.warn(`Failed to load project ${projectId}: ${error}`);
       errorCount++;
@@ -205,14 +296,22 @@ export async function loadAllSessions(
     }
   });
 
-  const loadedProjects = await Promise.all(projectPromises);
-  for (const project of loadedProjects) {
-    if (project !== null) {
-      projects.push(project);
+  const loadedProjectResults = await Promise.all(projectPromises);
+  let totalCircularRefCount = 0;
+
+  for (const result of loadedProjectResults) {
+    if (result !== null) {
+      projects.push(result.project);
+      totalCircularRefCount += result.circularRefCount;
     }
   }
 
-  return { projects, sessions, errorCount };
+  return {
+    projects,
+    sessions,
+    errorCount,
+    circularRefCount: totalCircularRefCount > 0 ? totalCircularRefCount : undefined,
+  };
 }
 
 /**

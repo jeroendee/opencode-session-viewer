@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { loadAllSessions, loadSessionContent, loadUserMessagesForSession } from './sessionLoader';
+import { StorageError } from './errors';
 import type { VirtualFileSystem } from './fileSystem';
 import type { SessionInfo, MessageInfo, Part } from '../types/session';
 
@@ -438,6 +439,12 @@ describe('loadAllSessions', () => {
 });
 
 describe('loadAllSessions circular references', () => {
+  let consoleWarnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
   it('handles mutual parent references without infinite loop', async () => {
     // A.parentID = B, B.parentID = A - should not cause infinite loop
     const fs = createMockFileSystem({
@@ -460,8 +467,10 @@ describe('loadAllSessions circular references', () => {
     // Both should be present - algorithm processes each session once
     expect(Object.keys(result.sessions)).toHaveLength(2);
     expect(result.errorCount).toBe(0);
-    // The tree structure may vary but should not hang
-    expect(result.projects[0].sessions.length).toBeGreaterThanOrEqual(0);
+    // Both should become roots due to circular reference detection
+    expect(result.projects[0].sessions.length).toBe(2);
+    // Should have detected circular references
+    expect(result.circularRefCount).toBeGreaterThan(0);
   });
 
   it('handles self-referential parentID', async () => {
@@ -479,9 +488,89 @@ describe('loadAllSessions circular references', () => {
 
     // Should handle gracefully - session can't be its own parent
     expect(Object.keys(result.sessions)).toHaveLength(1);
-    // Since parentID = self and nodeMap.has(parentID) = true,
-    // it would try to add itself as its own child, which is weird but shouldn't crash
-    expect(result.projects[0].sessions.length).toBeGreaterThanOrEqual(0);
+    // Session becomes a root
+    expect(result.projects[0].sessions.length).toBe(1);
+    expect(result.circularRefCount).toBe(1);
+    // Warning should be logged
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('self-referential')
+    );
+  });
+
+  it('handles longer circular chains (A -> B -> C -> A)', async () => {
+    const fs = createMockFileSystem({
+      'session/proj-1/sess-a.json': createSessionJson({
+        id: 'sess-a',
+        projectID: 'proj-1',
+        parentID: 'sess-c',
+        time: { created: 1000, updated: 1500 },
+      }),
+      'session/proj-1/sess-b.json': createSessionJson({
+        id: 'sess-b',
+        projectID: 'proj-1',
+        parentID: 'sess-a',
+        time: { created: 2000, updated: 2500 },
+      }),
+      'session/proj-1/sess-c.json': createSessionJson({
+        id: 'sess-c',
+        projectID: 'proj-1',
+        parentID: 'sess-b',
+        time: { created: 3000, updated: 3500 },
+      }),
+    });
+
+    const result = await loadAllSessions(fs);
+
+    // All sessions should be present
+    expect(Object.keys(result.sessions)).toHaveLength(3);
+    expect(result.errorCount).toBe(0);
+    // Should not hang, algorithm should complete
+    expect(result.projects).toHaveLength(1);
+    // Circular references should be detected
+    expect(result.circularRefCount).toBeGreaterThan(0);
+  });
+
+  it('returns circularRefCount as undefined when no circular refs', async () => {
+    const fs = createMockFileSystem({
+      'session/proj-1/sess-1.json': createSessionJson({
+        id: 'sess-1',
+        projectID: 'proj-1',
+        time: { created: 1000, updated: 1500 },
+      }),
+    });
+
+    const result = await loadAllSessions(fs);
+
+    expect(result.circularRefCount).toBeUndefined();
+  });
+});
+
+describe('loadAllSessions error handling', () => {
+  it('throws StorageError when session directory does not exist', async () => {
+    // Create a filesystem that throws when listing session directory
+    const mockFs: VirtualFileSystem = {
+      readFile: async () => null,
+      listDirectory: async (path: string[]) => {
+        if (path[0] === 'session') {
+          throw new Error('Directory not found');
+        }
+        return [];
+      },
+      exists: async () => false,
+    };
+
+    await expect(loadAllSessions(mockFs)).rejects.toThrow(StorageError);
+    await expect(loadAllSessions(mockFs)).rejects.toThrow(/not be an OpenCode storage folder/);
+  });
+
+  it('returns empty results when session directory is empty (no projects)', async () => {
+    const fs = createMockFileSystem({});
+
+    const result = await loadAllSessions(fs);
+
+    expect(result.projects).toEqual([]);
+    expect(result.sessions).toEqual({});
+    expect(result.errorCount).toBe(0);
   });
 });
 

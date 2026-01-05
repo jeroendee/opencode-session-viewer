@@ -12,6 +12,7 @@ vi.mock('../lib/fileSystem', async () => {
   return {
     ...actual,
     isFileSystemAccessSupported: vi.fn(),
+    isDragDropSupported: vi.fn(),
     openDirectoryPicker: vi.fn(),
     createFileSystemFromHandle: vi.fn(),
     createFileSystemFromDropped: vi.fn(),
@@ -53,6 +54,7 @@ describe('FolderPicker', () => {
 
   it('renders title and instructions', () => {
     vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(false);
+    vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
 
     render(<FolderPicker />);
 
@@ -65,6 +67,7 @@ describe('FolderPicker', () => {
 
   it('shows Browse Folder button when File System Access API is supported', () => {
     vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(true);
+    vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
 
     render(<FolderPicker />);
 
@@ -73,6 +76,7 @@ describe('FolderPicker', () => {
 
   it('hides Browse Folder button when File System Access API is not supported', () => {
     vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(false);
+    vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
 
     render(<FolderPicker />);
 
@@ -81,6 +85,7 @@ describe('FolderPicker', () => {
 
   it('shows drop zone content', () => {
     vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(false);
+    vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
 
     render(<FolderPicker />);
 
@@ -89,6 +94,7 @@ describe('FolderPicker', () => {
 
   it('shows browser compatibility note', () => {
     vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(false);
+    vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
 
     render(<FolderPicker />);
 
@@ -97,6 +103,7 @@ describe('FolderPicker', () => {
 
   it('calls openDirectoryPicker when Browse Folder button is clicked', async () => {
     vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(true);
+    vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
 
     const mockHandle = {} as FileSystemDirectoryHandle;
     vi.mocked(fileSystem.openDirectoryPicker).mockResolvedValue(mockHandle);
@@ -125,6 +132,7 @@ describe('FolderPicker', () => {
 
   it('shows loading state while loading sessions', async () => {
     vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(true);
+    vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
 
     const mockHandle = {} as FileSystemDirectoryHandle;
     vi.mocked(fileSystem.openDirectoryPicker).mockResolvedValue(mockHandle);
@@ -168,6 +176,7 @@ describe('FolderPicker', () => {
 
   it('shows error when no sessions are found', async () => {
     vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(true);
+    vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
 
     const mockHandle = {} as FileSystemDirectoryHandle;
     vi.mocked(fileSystem.openDirectoryPicker).mockResolvedValue(mockHandle);
@@ -198,6 +207,7 @@ describe('FolderPicker', () => {
 
   it('calls setFileSystem and setProjects on successful load', async () => {
     vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(true);
+    vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
 
     const mockHandle = {} as FileSystemDirectoryHandle;
     vi.mocked(fileSystem.openDirectoryPicker).mockResolvedValue(mockHandle);
@@ -229,6 +239,7 @@ describe('FolderPicker', () => {
 
   it('shows error when openDirectoryPicker fails', async () => {
     vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(true);
+    vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
     vi.mocked(fileSystem.openDirectoryPicker).mockRejectedValue(
       new fileSystem.FileSystemError('Access denied', 'NOT_FOUND')
     );
@@ -245,6 +256,7 @@ describe('FolderPicker', () => {
 
   it('does not show error when user cancels directory picker', async () => {
     vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(true);
+    vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
     vi.mocked(fileSystem.openDirectoryPicker).mockRejectedValue(
       new fileSystem.FileSystemError('User cancelled', 'PERMISSION_DENIED')
     );
@@ -263,6 +275,7 @@ describe('FolderPicker', () => {
 
   it('handles folder drop correctly', async () => {
     vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(false);
+    vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
 
     const mockFs = {
       readFile: vi.fn(),
@@ -314,6 +327,7 @@ describe('FolderPicker', () => {
 
   it('shows error from loadAllSessions failure', async () => {
     vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(true);
+    vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
 
     const mockHandle = {} as FileSystemDirectoryHandle;
     vi.mocked(fileSystem.openDirectoryPicker).mockResolvedValue(mockHandle);
