@@ -161,8 +161,8 @@ describe('SessionBrowser', () => {
     it('renders session count badges for each project', () => {
       render(<SessionBrowser sidebarOpen={true} />);
 
-      // opencode has 3 sessions (2 root + 1 child)
-      expect(screen.getByText('3')).toBeInTheDocument();
+      // opencode has 2 root sessions (child sessions are nested, not counted at top level)
+      expect(screen.getByText('2')).toBeInTheDocument();
       // other-project has 1 session
       expect(screen.getByText('1')).toBeInTheDocument();
     });
@@ -177,10 +177,20 @@ describe('SessionBrowser', () => {
       const opencodeButton = screen.getByRole('button', { name: /Expand opencode/i });
       fireEvent.click(opencodeButton);
 
-      // Now sessions should be visible
+      // Root sessions should be visible
       expect(screen.getByText('Implement feature X')).toBeInTheDocument();
-      expect(screen.getByText('Explore implementation')).toBeInTheDocument();
       expect(screen.getByText('Fix bug Y')).toBeInTheDocument();
+      
+      // Child session is nested under parent and requires expanding the parent
+      expect(screen.queryByText('Explore implementation')).not.toBeInTheDocument();
+      
+      // Find and click the expand button for the parent session (the one next to "Implement feature X")
+      const parentSessionRow = screen.getByText('Implement feature X').closest('div');
+      const expandParentButton = parentSessionRow?.parentElement?.querySelector('button[aria-label="Expand"]');
+      if (expandParentButton) {
+        fireEvent.click(expandParentButton);
+      }
+      expect(screen.getByText('Explore implementation')).toBeInTheDocument();
     });
 
     it('renders Change Folder button', () => {
@@ -275,6 +285,13 @@ describe('SessionBrowser', () => {
       // First expand the directory
       const opencodeButton = screen.getByRole('button', { name: /Expand opencode/i });
       fireEvent.click(opencodeButton);
+
+      // Find and click the expand button for the parent session
+      const parentSessionRow = screen.getByText('Implement feature X').closest('div');
+      const expandParentButton = parentSessionRow?.parentElement?.querySelector('button[aria-label="Expand"]');
+      if (expandParentButton) {
+        fireEvent.click(expandParentButton);
+      }
 
       const childSession = screen.getByRole('button', { name: 'Explore implementation' });
       fireEvent.click(childSession);

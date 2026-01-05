@@ -551,28 +551,13 @@ export async function loadUserMessagesForSession(
   return userMessageTexts;
 }
 
-/**
- * Flattens a tree of SessionNodes into a flat array of SessionInfo.
- */
-function flattenSessionNodes(nodes: { session: SessionInfo; children: unknown[] }[]): SessionInfo[] {
-  const result: SessionInfo[] = [];
-  
-  function traverse(node: { session: SessionInfo; children: unknown[] }) {
-    result.push(node.session);
-    for (const child of node.children as { session: SessionInfo; children: unknown[] }[]) {
-      traverse(child);
-    }
-  }
-  
-  for (const node of nodes) {
-    traverse(node);
-  }
-  
-  return result;
-}
+/** SessionNode type for grouping functions */
+type SessionNodeLike = { session: SessionInfo; children: SessionNodeLike[] };
 
 /**
- * Groups sessions by their working directory.
+ * Groups sessions by their working directory, preserving parent-child hierarchy.
+ * Only root sessions (no parentID) are included at the top level of each group.
+ * Child sessions are nested under their parents.
  * Sessions are sorted by update time descending (newest first) within each group.
  * Groups are sorted by their most recent session's update time descending.
  * 
@@ -580,32 +565,37 @@ function flattenSessionNodes(nodes: { session: SessionInfo; children: unknown[] 
  * @returns Array of DirectoryGroup sorted by most recent update time
  */
 export function groupSessionsByDirectory(
-  projects: { sessions: { session: SessionInfo; children: unknown[] }[] }[]
-): { directory: string; sessions: SessionInfo[]; latestUpdate: number }[] {
-  // Flatten all sessions from all projects
-  const allSessions: SessionInfo[] = [];
+  projects: { sessions: SessionNodeLike[] }[]
+): { directory: string; sessions: SessionNodeLike[]; latestUpdate: number }[] {
+  // Collect all root session nodes (those without parentID)
+  const rootNodes: SessionNodeLike[] = [];
   for (const project of projects) {
-    allSessions.push(...flattenSessionNodes(project.sessions));
+    for (const node of project.sessions) {
+      // Only include root sessions (no parentID) at the top level
+      if (!node.session.parentID) {
+        rootNodes.push(node);
+      }
+    }
   }
   
-  // Group by directory
-  const groupMap = new Map<string, SessionInfo[]>();
-  for (const session of allSessions) {
-    const dir = session.directory;
+  // Group root nodes by directory
+  const groupMap = new Map<string, SessionNodeLike[]>();
+  for (const node of rootNodes) {
+    const dir = node.session.directory;
     if (!groupMap.has(dir)) {
       groupMap.set(dir, []);
     }
-    groupMap.get(dir)!.push(session);
+    groupMap.get(dir)!.push(node);
   }
   
   // Convert to array and sort
-  const groups: { directory: string; sessions: SessionInfo[]; latestUpdate: number }[] = [];
+  const groups: { directory: string; sessions: SessionNodeLike[]; latestUpdate: number }[] = [];
   for (const [directory, sessions] of groupMap) {
     // Sort sessions within group by update time descending (newest first)
-    sessions.sort((a, b) => b.time.updated - a.time.updated);
+    sessions.sort((a, b) => b.session.time.updated - a.session.time.updated);
     
     // Get the latest update time for sorting groups
-    const latestUpdate = sessions[0]?.time.updated ?? 0;
+    const latestUpdate = sessions[0]?.session.time.updated ?? 0;
     
     groups.push({ directory, sessions, latestUpdate });
   }
@@ -618,28 +608,34 @@ export function groupSessionsByDirectory(
 
 /**
  * Groups sessions by date in a hierarchical tree: year -> month -> day.
+ * Preserves parent-child hierarchy within sessions.
+ * Only root sessions (no parentID) are included at the top level.
  * Sessions are sorted by update time descending (newest first) at all levels.
  * 
  * @param projects - Array of ProjectInfo from the store
  * @returns Array of YearGroup sorted by year descending (newest first)
  */
 export function groupSessionsByDate(
-  projects: { sessions: { session: SessionInfo; children: unknown[] }[] }[]
-): { year: number; label: string; months: { month: number; label: string; days: { day: number; label: string; sessions: SessionInfo[] }[] }[] }[] {
-  // Flatten all sessions from all projects
-  const allSessions: SessionInfo[] = [];
+  projects: { sessions: SessionNodeLike[] }[]
+): { year: number; label: string; months: { month: number; label: string; days: { day: number; label: string; sessions: SessionNodeLike[] }[] }[] }[] {
+  // Collect all root session nodes (those without parentID)
+  const rootNodes: SessionNodeLike[] = [];
   for (const project of projects) {
-    allSessions.push(...flattenSessionNodes(project.sessions));
+    for (const node of project.sessions) {
+      if (!node.session.parentID) {
+        rootNodes.push(node);
+      }
+    }
   }
   
-  // Sort all sessions by update time descending
-  allSessions.sort((a, b) => b.time.updated - a.time.updated);
+  // Sort all root nodes by update time descending
+  rootNodes.sort((a, b) => b.session.time.updated - a.session.time.updated);
   
   // Group by year -> month -> day
-  const yearMap = new Map<number, Map<number, Map<number, SessionInfo[]>>>();
+  const yearMap = new Map<number, Map<number, Map<number, SessionNodeLike[]>>>();
   
-  for (const session of allSessions) {
-    const date = new Date(session.time.updated);
+  for (const node of rootNodes) {
+    const date = new Date(node.session.time.updated);
     const year = date.getFullYear();
     const month = date.getMonth();
     const day = date.getDate();
@@ -657,7 +653,7 @@ export function groupSessionsByDate(
     if (!dayMap.has(day)) {
       dayMap.set(day, []);
     }
-    dayMap.get(day)!.push(session);
+    dayMap.get(day)!.push(node);
   }
   
   // Month names for labels
@@ -667,21 +663,21 @@ export function groupSessionsByDate(
   ];
   
   // Convert to array structure
-  const years: { year: number; label: string; months: { month: number; label: string; days: { day: number; label: string; sessions: SessionInfo[] }[] }[] }[] = [];
+  const years: { year: number; label: string; months: { month: number; label: string; days: { day: number; label: string; sessions: SessionNodeLike[] }[] }[] }[] = [];
   
   // Sort years descending
   const sortedYears = Array.from(yearMap.keys()).sort((a, b) => b - a);
   
   for (const year of sortedYears) {
     const monthMap = yearMap.get(year)!;
-    const months: { month: number; label: string; days: { day: number; label: string; sessions: SessionInfo[] }[] }[] = [];
+    const months: { month: number; label: string; days: { day: number; label: string; sessions: SessionNodeLike[] }[] }[] = [];
     
     // Sort months descending
     const sortedMonths = Array.from(monthMap.keys()).sort((a, b) => b - a);
     
     for (const month of sortedMonths) {
       const dayMap = monthMap.get(month)!;
-      const days: { day: number; label: string; sessions: SessionInfo[] }[] = [];
+      const days: { day: number; label: string; sessions: SessionNodeLike[] }[] = [];
       
       // Sort days descending
       const sortedDays = Array.from(dayMap.keys()).sort((a, b) => b - a);

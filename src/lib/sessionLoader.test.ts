@@ -1310,7 +1310,7 @@ describe('groupSessionsByDirectory', () => {
     const result = groupSessionsByDirectory(projects);
 
     expect(result).toHaveLength(1);
-    expect(result[0].sessions.map((s: SessionInfo) => s.id)).toEqual(['new-sess', 'mid-sess', 'old-sess']);
+    expect(result[0].sessions.map((s) => s.session.id)).toEqual(['new-sess', 'mid-sess', 'old-sess']);
   });
 
   it('sorts directory groups by most recent session update time descending', () => {
@@ -1350,7 +1350,7 @@ describe('groupSessionsByDirectory', () => {
     expect(result[1].directory).toBe('/Users/test/old-project');
   });
 
-  it('flattens nested child sessions into the directory group', () => {
+  it('preserves parent-child hierarchy in the directory group', () => {
     const projects = [
       {
         id: 'proj-1',
@@ -1385,10 +1385,12 @@ describe('groupSessionsByDirectory', () => {
     const result = groupSessionsByDirectory(projects);
 
     expect(result).toHaveLength(1);
-    expect(result[0].sessions).toHaveLength(2);
-    // Child has newer update time, should be first
-    expect(result[0].sessions[0].id).toBe('child-sess');
-    expect(result[0].sessions[1].id).toBe('parent-sess');
+    // Only root sessions at top level
+    expect(result[0].sessions).toHaveLength(1);
+    expect(result[0].sessions[0].session.id).toBe('parent-sess');
+    // Child is nested
+    expect(result[0].sessions[0].children).toHaveLength(1);
+    expect(result[0].sessions[0].children[0].session.id).toBe('child-sess');
   });
 
   it('returns empty array for empty projects', () => {
@@ -1441,6 +1443,7 @@ describe('groupSessionsByDate', () => {
     directory: string;
     title: string;
     time: { created: number; updated: number };
+    parentID?: string;
   }): SessionInfo {
     return {
       version: '1.0',
@@ -1602,7 +1605,7 @@ describe('groupSessionsByDate', () => {
 
     // All sessions on same day, should be sorted by time descending
     const daySessions = result[0].months[0].days[0].sessions;
-    expect(daySessions.map((s: SessionInfo) => s.id)).toEqual([
+    expect(daySessions.map((s) => s.session.id)).toEqual([
       'evening-sess',
       'afternoon-sess', 
       'morning-sess',
@@ -1614,7 +1617,7 @@ describe('groupSessionsByDate', () => {
     expect(result).toEqual([]);
   });
 
-  it('flattens nested child sessions', () => {
+  it('preserves parent-child hierarchy', () => {
     const timestamp = new Date(2025, 0, 15, 10, 0, 0).getTime();
     
     const projects = [
@@ -1637,6 +1640,7 @@ describe('groupSessionsByDate', () => {
                   projectID: 'proj-1',
                   directory: '/app',
                   title: 'Child',
+                  parentID: 'parent-sess',
                   time: { created: timestamp + 1000, updated: timestamp + 1000 },
                 }),
                 children: [],
@@ -1649,8 +1653,12 @@ describe('groupSessionsByDate', () => {
 
     const result = groupSessionsByDate(projects);
 
-    // Both parent and child should be in the same day
+    // Only root sessions at top level
     const daySessions = result[0].months[0].days[0].sessions;
-    expect(daySessions).toHaveLength(2);
+    expect(daySessions).toHaveLength(1);
+    expect(daySessions[0].session.id).toBe('parent-sess');
+    // Child is nested
+    expect(daySessions[0].children).toHaveLength(1);
+    expect(daySessions[0].children[0].session.id).toBe('child-sess');
   });
 });

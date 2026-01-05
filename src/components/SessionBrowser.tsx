@@ -1,11 +1,10 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Search, ChevronRight, ChevronDown, FolderOpen, Calendar, ChevronsUpDown, X } from 'lucide-react';
-import { useSessionStore, type DirectoryGroup, type YearGroup, type MonthGroup, type DayGroup } from '../store/sessionStore';
+import { useSessionStore, type DirectoryGroup, type YearGroup, type MonthGroup, type DayGroup, type SessionNode } from '../store/sessionStore';
 import { groupSessionsByDirectory, groupSessionsByDate } from '../lib/sessionLoader';
 import { useSidebarPreferences, type GroupingMode } from '../hooks/useSidebarPreferences';
 import { useSessionSearch } from '../hooks/useSessionSearch';
 import { LoadingSpinner } from './LoadingSpinner';
-import type { SessionInfo } from '../types/session';
 
 interface SessionBrowserProps {
   sidebarOpen: boolean;
@@ -21,36 +20,78 @@ function getDirectoryName(path: string): string {
 }
 
 /**
- * Renders a single session item (flat, no nesting).
+ * Renders a single session item with optional nested children.
  */
 function SessionItem({
-  session,
-  isSelected,
+  node,
+  selectedSessionId,
   onSelect,
   depth = 1,
 }: {
-  session: SessionInfo;
-  isSelected: boolean;
+  node: SessionNode;
+  selectedSessionId: string | null;
   onSelect: (sessionId: string) => void;
   depth?: number;
 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const hasChildren = node.children.length > 0;
+  const isSelected = selectedSessionId === node.session.id;
   const paddingLeft = 8 + depth * 16;
-  
+
+  const handleToggleExpand = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsExpanded((prev) => !prev);
+  }, []);
+
   return (
-    <button
-      onClick={() => onSelect(session.id)}
-      aria-current={isSelected ? 'true' : undefined}
-      className={`
-        w-full text-left py-1.5 px-2 text-sm rounded-md transition-colors
-        ${isSelected
-          ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200'
-          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}
-      `}
-      style={{ paddingLeft: `${paddingLeft}px` }}
-      title={session.title}
-    >
-      <span className="block truncate">{session.title || 'Untitled Session'}</span>
-    </button>
+    <div>
+      <div className="flex items-center">
+        {/* Expand/collapse button for sessions with children */}
+        {hasChildren ? (
+          <button
+            onClick={handleToggleExpand}
+            className="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            aria-label={isExpanded ? 'Collapse' : 'Expand'}
+            style={{ marginLeft: `${paddingLeft - 16}px` }}
+          >
+            {isExpanded ? (
+              <ChevronDown className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5" />
+            )}
+          </button>
+        ) : (
+          <span style={{ marginLeft: `${paddingLeft}px` }} />
+        )}
+        <button
+          onClick={() => onSelect(node.session.id)}
+          aria-current={isSelected ? 'true' : undefined}
+          className={`
+            flex-1 text-left py-1.5 px-2 text-sm rounded-md transition-colors
+            ${isSelected
+              ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200'
+              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}
+          `}
+          title={node.session.title}
+        >
+          <span className="block truncate">{node.session.title || 'Untitled Session'}</span>
+        </button>
+      </div>
+      {/* Render children if expanded */}
+      {hasChildren && isExpanded && (
+        <div className="ml-2 border-l border-gray-200 dark:border-gray-700">
+          {node.children.map((child) => (
+            <SessionItem
+              key={child.session.id}
+              node={child}
+              selectedSessionId={selectedSessionId}
+              onSelect={onSelect}
+              depth={depth + 1}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -93,11 +134,11 @@ function DirectoryGroupComponent({
       </button>
       {isExpanded && group.sessions.length > 0 && (
         <div className="mt-1">
-          {group.sessions.map((session) => (
+          {group.sessions.map((node) => (
             <SessionItem
-              key={session.id}
-              session={session}
-              isSelected={selectedSessionId === session.id}
+              key={node.session.id}
+              node={node}
+              selectedSessionId={selectedSessionId}
               onSelect={onSelectSession}
             />
           ))}
@@ -142,11 +183,11 @@ function DayGroupComponent({
       </button>
       {isExpanded && (
         <div className="mt-1">
-          {group.sessions.map((session) => (
+          {group.sessions.map((node) => (
             <SessionItem
-              key={session.id}
-              session={session}
-              isSelected={selectedSessionId === session.id}
+              key={node.session.id}
+              node={node}
+              selectedSessionId={selectedSessionId}
               onSelect={onSelectSession}
               depth={3}
             />
@@ -418,16 +459,36 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
     return groupSessionsByDate(projects);
   }, [projects]);
   
+  // Helper to check if a node or any of its children match the search
+  const nodeMatchesSearch = useCallback((node: SessionNode, ids: Set<string>): boolean => {
+    if (ids.has(node.session.id)) return true;
+    return node.children.some((child) => nodeMatchesSearch(child, ids));
+  }, []);
+
+  // Helper to filter a node tree, keeping nodes that match or have matching descendants
+  const filterNodeTree = useCallback((node: SessionNode, ids: Set<string>): SessionNode | null => {
+    const matchingChildren = node.children
+      .map((child) => filterNodeTree(child, ids))
+      .filter((child): child is SessionNode => child !== null);
+    
+    if (ids.has(node.session.id) || matchingChildren.length > 0) {
+      return { ...node, children: matchingChildren };
+    }
+    return null;
+  }, []);
+
   // Filtered groups when searching
   const filteredDirectoryGroups = useMemo(() => {
     if (!matchingSessionIds) return directoryGroups;
     return directoryGroups
       .map((group) => ({
         ...group,
-        sessions: group.sessions.filter((s) => matchingSessionIds.has(s.id)),
+        sessions: group.sessions
+          .map((node) => filterNodeTree(node, matchingSessionIds))
+          .filter((node): node is SessionNode => node !== null),
       }))
       .filter((group) => group.sessions.length > 0);
-  }, [directoryGroups, matchingSessionIds]);
+  }, [directoryGroups, matchingSessionIds, filterNodeTree]);
 
   const filteredDateGroups = useMemo(() => {
     if (!matchingSessionIds) return dateGroups;
@@ -440,14 +501,16 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
             days: monthGroup.days
               .map((dayGroup) => ({
                 ...dayGroup,
-                sessions: dayGroup.sessions.filter((s) => matchingSessionIds.has(s.id)),
+                sessions: dayGroup.sessions
+                  .map((node) => filterNodeTree(node, matchingSessionIds))
+                  .filter((node): node is SessionNode => node !== null),
               }))
               .filter((dayGroup) => dayGroup.sessions.length > 0),
           }))
           .filter((monthGroup) => monthGroup.days.length > 0),
       }))
       .filter((yearGroup) => yearGroup.months.length > 0);
-  }, [dateGroups, matchingSessionIds]);
+  }, [dateGroups, matchingSessionIds, filterNodeTree]);
 
   // Pre-compute all month/day keys for auto-expanding during search
   const { allMonthKeys, allDayKeys } = useMemo(() => {

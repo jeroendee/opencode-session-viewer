@@ -26,7 +26,7 @@ export interface ProjectInfo {
  */
 export interface DirectoryGroup {
   directory: string; // The working directory path
-  sessions: SessionInfo[]; // Flat list of sessions, sorted by time descending
+  sessions: SessionNode[]; // Root sessions with nested children, sorted by time descending
   latestUpdate: number; // Most recent update time (for sorting groups)
 }
 
@@ -36,7 +36,7 @@ export interface DirectoryGroup {
 export interface DayGroup {
   day: number; // Day of month (1-31)
   label: string; // e.g., "15" or "Today"
-  sessions: SessionInfo[];
+  sessions: SessionNode[];
 }
 
 /**
