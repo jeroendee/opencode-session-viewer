@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { loadAllSessions, loadSessionContent, loadUserMessagesForSession } from './sessionLoader';
+import { loadAllSessions, loadSessionContent, loadUserMessagesForSession, groupSessionsByDirectory } from './sessionLoader';
 import { StorageError } from './errors';
 import type { VirtualFileSystem } from './fileSystem';
 import type { SessionInfo, MessageInfo, Part } from '../types/session';
@@ -1205,5 +1205,230 @@ describe('loadUserMessagesForSession', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]).toBe('Valid text');
+  });
+});
+
+describe('groupSessionsByDirectory', () => {
+  // Helper to create a minimal valid SessionInfo for testing
+  function makeSession(overrides: {
+    id: string;
+    projectID: string;
+    directory: string;
+    title: string;
+    time: { created: number; updated: number };
+    parentID?: string;
+  }): SessionInfo {
+    return {
+      version: '1.0',
+      ...overrides,
+    };
+  }
+
+  it('groups sessions from different projects by their directory', () => {
+    const projects = [
+      {
+        id: 'proj-1',
+        path: '/path/to/project1',
+        sessions: [
+          {
+            session: makeSession({
+              id: 'sess-1',
+              projectID: 'proj-1',
+              directory: '/Users/test/myapp',
+              title: 'Session 1',
+              time: { created: 1000, updated: 2000 },
+            }),
+            children: [],
+          },
+        ],
+      },
+      {
+        id: 'proj-2',
+        path: '/path/to/project2',
+        sessions: [
+          {
+            session: makeSession({
+              id: 'sess-2',
+              projectID: 'proj-2',
+              directory: '/Users/test/myapp', // Same directory as sess-1
+              title: 'Session 2',
+              time: { created: 3000, updated: 4000 },
+            }),
+            children: [],
+          },
+        ],
+      },
+    ];
+
+    const result = groupSessionsByDirectory(projects);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].directory).toBe('/Users/test/myapp');
+    expect(result[0].sessions).toHaveLength(2);
+  });
+
+  it('sorts sessions within a group by update time descending (newest first)', () => {
+    const projects = [
+      {
+        id: 'proj-1',
+        path: '/path',
+        sessions: [
+          {
+            session: makeSession({
+              id: 'old-sess',
+              projectID: 'proj-1',
+              directory: '/Users/test/app',
+              title: 'Old Session',
+              time: { created: 1000, updated: 1000 },
+            }),
+            children: [],
+          },
+          {
+            session: makeSession({
+              id: 'new-sess',
+              projectID: 'proj-1',
+              directory: '/Users/test/app',
+              title: 'New Session',
+              time: { created: 5000, updated: 5000 },
+            }),
+            children: [],
+          },
+          {
+            session: makeSession({
+              id: 'mid-sess',
+              projectID: 'proj-1',
+              directory: '/Users/test/app',
+              title: 'Mid Session',
+              time: { created: 3000, updated: 3000 },
+            }),
+            children: [],
+          },
+        ],
+      },
+    ];
+
+    const result = groupSessionsByDirectory(projects);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].sessions.map((s: SessionInfo) => s.id)).toEqual(['new-sess', 'mid-sess', 'old-sess']);
+  });
+
+  it('sorts directory groups by most recent session update time descending', () => {
+    const projects = [
+      {
+        id: 'proj-1',
+        path: '/path',
+        sessions: [
+          {
+            session: makeSession({
+              id: 'old-dir-sess',
+              projectID: 'proj-1',
+              directory: '/Users/test/old-project',
+              title: 'Old Project Session',
+              time: { created: 1000, updated: 1000 },
+            }),
+            children: [],
+          },
+          {
+            session: makeSession({
+              id: 'new-dir-sess',
+              projectID: 'proj-1',
+              directory: '/Users/test/new-project',
+              title: 'New Project Session',
+              time: { created: 5000, updated: 5000 },
+            }),
+            children: [],
+          },
+        ],
+      },
+    ];
+
+    const result = groupSessionsByDirectory(projects);
+
+    expect(result).toHaveLength(2);
+    expect(result[0].directory).toBe('/Users/test/new-project');
+    expect(result[1].directory).toBe('/Users/test/old-project');
+  });
+
+  it('flattens nested child sessions into the directory group', () => {
+    const projects = [
+      {
+        id: 'proj-1',
+        path: '/path',
+        sessions: [
+          {
+            session: makeSession({
+              id: 'parent-sess',
+              projectID: 'proj-1',
+              directory: '/Users/test/app',
+              title: 'Parent Session',
+              time: { created: 1000, updated: 1000 },
+            }),
+            children: [
+              {
+                session: makeSession({
+                  id: 'child-sess',
+                  projectID: 'proj-1',
+                  directory: '/Users/test/app',
+                  title: 'Child Session',
+                  parentID: 'parent-sess',
+                  time: { created: 2000, updated: 3000 },
+                }),
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const result = groupSessionsByDirectory(projects);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].sessions).toHaveLength(2);
+    // Child has newer update time, should be first
+    expect(result[0].sessions[0].id).toBe('child-sess');
+    expect(result[0].sessions[1].id).toBe('parent-sess');
+  });
+
+  it('returns empty array for empty projects', () => {
+    const result = groupSessionsByDirectory([]);
+
+    expect(result).toEqual([]);
+  });
+
+  it('sets latestUpdate to the most recent session update time', () => {
+    const projects = [
+      {
+        id: 'proj-1',
+        path: '/path',
+        sessions: [
+          {
+            session: makeSession({
+              id: 'sess-1',
+              projectID: 'proj-1',
+              directory: '/Users/test/app',
+              title: 'Session 1',
+              time: { created: 1000, updated: 5000 },
+            }),
+            children: [],
+          },
+          {
+            session: makeSession({
+              id: 'sess-2',
+              projectID: 'proj-1',
+              directory: '/Users/test/app',
+              title: 'Session 2',
+              time: { created: 2000, updated: 3000 },
+            }),
+            children: [],
+          },
+        ],
+      },
+    ];
+
+    const result = groupSessionsByDirectory(projects);
+
+    expect(result[0].latestUpdate).toBe(5000);
   });
 });

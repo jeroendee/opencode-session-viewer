@@ -550,3 +550,68 @@ export async function loadUserMessagesForSession(
 
   return userMessageTexts;
 }
+
+/**
+ * Flattens a tree of SessionNodes into a flat array of SessionInfo.
+ */
+function flattenSessionNodes(nodes: { session: SessionInfo; children: unknown[] }[]): SessionInfo[] {
+  const result: SessionInfo[] = [];
+  
+  function traverse(node: { session: SessionInfo; children: unknown[] }) {
+    result.push(node.session);
+    for (const child of node.children as { session: SessionInfo; children: unknown[] }[]) {
+      traverse(child);
+    }
+  }
+  
+  for (const node of nodes) {
+    traverse(node);
+  }
+  
+  return result;
+}
+
+/**
+ * Groups sessions by their working directory.
+ * Sessions are sorted by update time descending (newest first) within each group.
+ * Groups are sorted by their most recent session's update time descending.
+ * 
+ * @param projects - Array of ProjectInfo from the store
+ * @returns Array of DirectoryGroup sorted by most recent update time
+ */
+export function groupSessionsByDirectory(
+  projects: { sessions: { session: SessionInfo; children: unknown[] }[] }[]
+): { directory: string; sessions: SessionInfo[]; latestUpdate: number }[] {
+  // Flatten all sessions from all projects
+  const allSessions: SessionInfo[] = [];
+  for (const project of projects) {
+    allSessions.push(...flattenSessionNodes(project.sessions));
+  }
+  
+  // Group by directory
+  const groupMap = new Map<string, SessionInfo[]>();
+  for (const session of allSessions) {
+    const dir = session.directory;
+    if (!groupMap.has(dir)) {
+      groupMap.set(dir, []);
+    }
+    groupMap.get(dir)!.push(session);
+  }
+  
+  // Convert to array and sort
+  const groups: { directory: string; sessions: SessionInfo[]; latestUpdate: number }[] = [];
+  for (const [directory, sessions] of groupMap) {
+    // Sort sessions within group by update time descending (newest first)
+    sessions.sort((a, b) => b.time.updated - a.time.updated);
+    
+    // Get the latest update time for sorting groups
+    const latestUpdate = sessions[0]?.time.updated ?? 0;
+    
+    groups.push({ directory, sessions, latestUpdate });
+  }
+  
+  // Sort groups by latest update time descending (most recently updated first)
+  groups.sort((a, b) => b.latestUpdate - a.latestUpdate);
+  
+  return groups;
+}

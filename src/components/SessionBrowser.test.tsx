@@ -154,13 +154,13 @@ describe('SessionBrowser', () => {
 
       render(<SessionBrowser sidebarOpen={true} />);
 
-      expect(screen.getByText('No projects loaded')).toBeInTheDocument();
+      expect(screen.getByText('No sessions loaded')).toBeInTheDocument();
     });
 
-    it('renders the PROJECTS header', () => {
+    it('renders the DIRECTORIES header', () => {
       render(<SessionBrowser sidebarOpen={true} />);
 
-      expect(screen.getByText('Projects')).toBeInTheDocument();
+      expect(screen.getByText('Directories')).toBeInTheDocument();
     });
   });
 

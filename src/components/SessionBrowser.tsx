@@ -1,7 +1,9 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Search, ChevronRight, ChevronDown, FolderOpen } from 'lucide-react';
-import { useSessionStore, type ProjectInfo, type SessionNode } from '../store/sessionStore';
+import { useSessionStore, type DirectoryGroup } from '../store/sessionStore';
+import { groupSessionsByDirectory } from '../lib/sessionLoader';
 import { LoadingSpinner } from './LoadingSpinner';
+import type { SessionInfo } from '../types/session';
 
 interface SessionBrowserProps {
   sidebarOpen: boolean;
@@ -9,89 +11,59 @@ interface SessionBrowserProps {
 }
 
 /**
- * Counts total sessions in a project (including nested children).
+ * Extracts directory name from path (last segment).
  */
-function countSessions(nodes: SessionNode[]): number {
-  let count = 0;
-  for (const node of nodes) {
-    count += 1;
-    count += countSessions(node.children);
-  }
-  return count;
-}
-
-/**
- * Extracts project name from path (last segment).
- */
-function getProjectName(path: string): string {
+function getDirectoryName(path: string): string {
   const segments = path.split('/').filter(Boolean);
   return segments[segments.length - 1] || path;
 }
 
 /**
- * Renders a single session item with proper indentation.
+ * Renders a single session item (flat, no nesting).
  */
 function SessionItem({
-  node,
-  depth,
-  selectedSessionId,
+  session,
+  isSelected,
   onSelect,
 }: {
-  node: SessionNode;
-  depth: number;
-  selectedSessionId: string | null;
+  session: SessionInfo;
+  isSelected: boolean;
   onSelect: (sessionId: string) => void;
 }) {
-  const isSelected = selectedSessionId === node.session.id;
-  const paddingLeft = 12 + depth * 16;
-
   return (
-    <>
-      <button
-        onClick={() => onSelect(node.session.id)}
-        aria-current={isSelected ? 'true' : undefined}
-        className={`
-          w-full text-left py-1.5 px-2 text-sm rounded-md transition-colors
-          ${isSelected
-            ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200'
-            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}
-        `}
-        style={{ paddingLeft: `${paddingLeft}px` }}
-        title={node.session.title}
-      >
-        <span className="block truncate">{node.session.title || 'Untitled Session'}</span>
-      </button>
-      {node.children.map((child) => (
-        <SessionItem
-          key={child.session.id}
-          node={child}
-          depth={depth + 1}
-          selectedSessionId={selectedSessionId}
-          onSelect={onSelect}
-        />
-      ))}
-    </>
+    <button
+      onClick={() => onSelect(session.id)}
+      aria-current={isSelected ? 'true' : undefined}
+      className={`
+        w-full text-left py-1.5 px-2 pl-7 text-sm rounded-md transition-colors
+        ${isSelected
+          ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200'
+          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}
+      `}
+      title={session.title}
+    >
+      <span className="block truncate">{session.title || 'Untitled Session'}</span>
+    </button>
   );
 }
 
 /**
- * Renders a collapsible project group with its sessions.
+ * Renders a collapsible directory group with its sessions.
  */
-function ProjectGroup({
-  project,
+function DirectoryGroupComponent({
+  group,
   isExpanded,
   onToggle,
   selectedSessionId,
   onSelectSession,
 }: {
-  project: ProjectInfo;
+  group: DirectoryGroup;
   isExpanded: boolean;
   onToggle: () => void;
   selectedSessionId: string | null;
   onSelectSession: (sessionId: string) => void;
 }) {
-  const sessionCount = countSessions(project.sessions);
-  const projectName = getProjectName(project.path);
+  const directoryName = getDirectoryName(group.directory);
 
   return (
     <div className="mb-1">
@@ -99,7 +71,7 @@ function ProjectGroup({
         onClick={onToggle}
         className="w-full flex items-center gap-2 py-1.5 px-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
         aria-expanded={isExpanded}
-        aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${projectName}`}
+        aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${directoryName}`}
       >
         {isExpanded ? (
           <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />
@@ -107,19 +79,18 @@ function ProjectGroup({
           <ChevronRight className="w-4 h-4 text-gray-500 flex-shrink-0" />
         )}
         <FolderOpen className="w-4 h-4 text-gray-500 flex-shrink-0" />
-        <span className="flex-1 truncate text-left">{projectName}</span>
+        <span className="flex-1 truncate text-left" title={group.directory}>{directoryName}</span>
         <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-200 dark:bg-gray-600 px-1.5 py-0.5 rounded-full tabular-nums">
-          {sessionCount}
+          {group.sessions.length}
         </span>
       </button>
-      {isExpanded && project.sessions.length > 0 && (
+      {isExpanded && group.sessions.length > 0 && (
         <div className="mt-1">
-          {project.sessions.map((node) => (
+          {group.sessions.map((session) => (
             <SessionItem
-              key={node.session.id}
-              node={node}
-              depth={1}
-              selectedSessionId={selectedSessionId}
+              key={session.id}
+              session={session}
+              isSelected={selectedSessionId === session.id}
               onSelect={onSelectSession}
             />
           ))}
@@ -130,54 +101,61 @@ function ProjectGroup({
 }
 
 /**
- * SessionBrowser - Left sidebar for browsing sessions organized by project.
+ * SessionBrowser - Left sidebar for browsing sessions organized by directory.
  * 
  * Features:
  * - Search bar (placeholder for Phase 4)
- * - Collapsible project groups
+ * - Collapsible directory groups
+ * - Sessions sorted by time (newest first)
  * - Session count badges
  * - Change folder button
  */
 export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserProps) {
   const { projects, selectedSessionId, selectSession, clearFolder, isLoadingFolder } = useSessionStore();
-  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => {
-    // Start with all projects expanded
-    return new Set(projects.map((p) => p.id));
+  
+  // Group sessions by directory and sort by time
+  const directoryGroups = useMemo(() => {
+    return groupSessionsByDirectory(projects);
+  }, [projects]);
+
+  const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => {
+    // Start with all directories expanded
+    return new Set(directoryGroups.map((g) => g.directory));
   });
 
-  // Sync expandedProjects when projects list changes (e.g., after loading folder)
-  // - New projects are expanded by default
-  // - Existing projects keep their expanded/collapsed state
-  // - Removed projects are cleaned up from the set
+  // Sync expandedDirectories when directory groups change (e.g., after loading folder)
+  // - New directories are expanded by default
+  // - Existing directories keep their expanded/collapsed state
+  // - Removed directories are cleaned up from the set
   useEffect(() => {
-    setExpandedProjects((prev) => {
-      const currentProjectIds = new Set(projects.map((p) => p.id));
+    setExpandedDirectories((prev) => {
+      const currentDirectories = new Set(directoryGroups.map((g) => g.directory));
       const next = new Set<string>();
 
-      for (const id of currentProjectIds) {
-        if (prev.has(id)) {
-          // Existing project that was expanded - keep it expanded
-          next.add(id);
-        } else if (prev.size === 0 || !Array.from(prev).some((prevId) => currentProjectIds.has(prevId))) {
-          // Initial load or complete project list change - expand all
-          next.add(id);
+      for (const dir of currentDirectories) {
+        if (prev.has(dir)) {
+          // Existing directory that was expanded - keep it expanded
+          next.add(dir);
+        } else if (prev.size === 0 || !Array.from(prev).some((prevDir) => currentDirectories.has(prevDir))) {
+          // Initial load or complete directory list change - expand all
+          next.add(dir);
         } else {
-          // New project added alongside existing projects - expand by default
-          next.add(id);
+          // New directory added alongside existing directories - expand by default
+          next.add(dir);
         }
       }
 
       return next;
     });
-  }, [projects]);
+  }, [directoryGroups]);
 
-  const handleToggleProject = useCallback((projectId: string) => {
-    setExpandedProjects((prev) => {
+  const handleToggleDirectory = useCallback((directory: string) => {
+    setExpandedDirectories((prev) => {
       const next = new Set(prev);
-      if (next.has(projectId)) {
-        next.delete(projectId);
+      if (next.has(directory)) {
+        next.delete(directory);
       } else {
-        next.add(projectId);
+        next.add(directory);
       }
       return next;
     });
@@ -228,25 +206,25 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
         </div>
       </div>
 
-      {/* Project list */}
+      {/* Directory list */}
       <div className="flex-1 overflow-y-auto p-4">
         <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-          Projects
+          Directories
         </h3>
         {isLoadingFolder ? (
           <div className="flex flex-col items-center justify-center py-8">
             <LoadingSpinner label="Loading sessions..." />
           </div>
-        ) : projects.length === 0 ? (
-          <p className="text-sm text-gray-500 dark:text-gray-400">No projects loaded</p>
+        ) : directoryGroups.length === 0 ? (
+          <p className="text-sm text-gray-500 dark:text-gray-400">No sessions loaded</p>
         ) : (
           <div className="space-y-1">
-            {projects.map((project) => (
-              <ProjectGroup
-                key={project.id}
-                project={project}
-                isExpanded={expandedProjects.has(project.id)}
-                onToggle={() => handleToggleProject(project.id)}
+            {directoryGroups.map((group) => (
+              <DirectoryGroupComponent
+                key={group.directory}
+                group={group}
+                isExpanded={expandedDirectories.has(group.directory)}
+                onToggle={() => handleToggleDirectory(group.directory)}
                 selectedSessionId={selectedSessionId}
                 onSelectSession={handleSelectSession}
               />

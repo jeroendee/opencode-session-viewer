@@ -20,6 +20,16 @@ export interface ProjectInfo {
   sessions: SessionNode[];
 }
 
+/**
+ * Represents sessions grouped by their working directory.
+ * Used for displaying sessions organized by directory in the UI.
+ */
+export interface DirectoryGroup {
+  directory: string; // The working directory path
+  sessions: SessionInfo[]; // Flat list of sessions, sorted by time descending
+  latestUpdate: number; // Most recent update time (for sorting groups)
+}
+
 interface SessionState {
   // Session data (single session - existing)
   session: Session | null;
