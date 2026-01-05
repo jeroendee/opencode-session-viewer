@@ -1,7 +1,9 @@
 import { useRef, useMemo, useCallback } from 'react';
 import { Header } from './components/Header';
-import { Sidebar, type SidebarHandle } from './components/Sidebar';
-import { LoadSession } from './components/LoadSession';
+import { MessageSidebar, type MessageSidebarHandle } from './components/MessageSidebar';
+import { SessionBrowser } from './components/SessionBrowser';
+import { FolderPicker } from './components/FolderPicker';
+import { SelectSessionPrompt } from './components/SelectSessionPrompt';
 import { MessageList } from './components/MessageList';
 import { KeyboardShortcutsHelp } from './components/KeyboardShortcutsHelp';
 import { useSessionStore } from './store/sessionStore';
@@ -10,9 +12,9 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { groupMessages } from './utils/groupMessages';
 
 function App() {
-  const { session, setSidebarOpen } = useSessionStore();
+  const { fileSystem, session, sidebarOpen, setSidebarOpen } = useSessionStore();
   const { activeMessageId, scrollToMessage } = useNavigation();
-  const sidebarRef = useRef<SidebarHandle>(null);
+  const messageSidebarRef = useRef<MessageSidebarHandle>(null);
 
   const groups = useMemo(() => {
     return session ? groupMessages(session.messages) : [];
@@ -27,7 +29,7 @@ function App() {
     setSidebarOpen(true);
     // Small delay to ensure sidebar is open before focusing
     setTimeout(() => {
-      sidebarRef.current?.focusSearch();
+      messageSidebarRef.current?.focusSearch();
     }, 50);
   }, [setSidebarOpen]);
 
@@ -58,28 +60,42 @@ function App() {
     enabled: !!session,
   });
 
+  const handleCloseSidebar = useCallback(() => {
+    setSidebarOpen(false);
+  }, [setSidebarOpen]);
+
+  // If no fileSystem, show FolderPicker to load sessions folder
+  if (!fileSystem) {
+    return (
+      <div className="h-screen bg-gray-50 dark:bg-gray-900 flex flex-col overflow-hidden">
+        <Header />
+        <FolderPicker />
+        <KeyboardShortcutsHelp isOpen={showHelp} onClose={() => setShowHelp(false)} />
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen bg-gray-50 dark:bg-gray-900 flex flex-col overflow-hidden">
       <Header />
 
       <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* Sidebar - only show when session is loaded */}
+        {/* Left sidebar - Session Browser (always visible when folder loaded) */}
+        <SessionBrowser sidebarOpen={sidebarOpen} onCloseSidebar={handleCloseSidebar} />
+
+        {/* Main content */}
+        <main className="flex-1 flex flex-col overflow-hidden">
+          {session ? <MessageList /> : <SelectSessionPrompt />}
+        </main>
+
+        {/* Right sidebar - Message Index (only when session loaded) */}
         {session && (
-          <Sidebar
-            ref={sidebarRef}
+          <MessageSidebar
+            ref={messageSidebarRef}
             activeMessageId={activeMessageId}
             onMessageClick={scrollToMessage}
           />
         )}
-
-        {/* Main content */}
-        <main className="flex-1 flex flex-col overflow-hidden">
-          {session ? (
-            <MessageList />
-          ) : (
-            <LoadSession />
-          )}
-        </main>
       </div>
 
       {/* Keyboard shortcuts help modal */}

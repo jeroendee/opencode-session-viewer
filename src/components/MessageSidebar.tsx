@@ -7,16 +7,16 @@ import { SearchBar } from './SearchBar';
 import { MessageIndex } from './MessageIndex';
 import { JumpToDropdown } from './JumpToDropdown';
 
-interface SidebarProps {
+interface MessageSidebarProps {
   activeMessageId: string | null;
   onMessageClick: (messageId: string) => void;
 }
 
-export interface SidebarHandle {
+export interface MessageSidebarHandle {
   focusSearch: () => void;
 }
 
-export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar({ activeMessageId, onMessageClick }, ref) {
+export const MessageSidebar = forwardRef<MessageSidebarHandle, MessageSidebarProps>(function MessageSidebar({ activeMessageId, onMessageClick }, ref) {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useImperativeHandle(ref, () => ({
@@ -55,17 +55,17 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar - positioned on the right */}
       <aside
         className={`
-          fixed md:relative inset-y-0 left-0 z-30
+          fixed md:relative inset-y-0 right-0 z-30
           bg-white dark:bg-gray-800
-          border-r border-gray-200 dark:border-gray-700
+          border-l border-gray-200 dark:border-gray-700
           transform transition-all duration-200 ease-in-out
           flex flex-col h-full
           ${sidebarOpen 
             ? 'translate-x-0 w-72' 
-            : '-translate-x-full md:translate-x-0 md:w-0 md:overflow-hidden md:border-r-0'}
+            : 'translate-x-full md:translate-x-0 md:w-0 md:overflow-hidden md:border-l-0'}
         `}
       >
         {/* Mobile header */}
