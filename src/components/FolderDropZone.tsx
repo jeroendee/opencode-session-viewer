@@ -102,6 +102,7 @@ export function FolderDropZone({
 
   return (
     <div
+      data-testid="folder-drop-zone"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

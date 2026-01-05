@@ -33,7 +33,7 @@ describe('FolderDropZone', () => {
   it('shows drag over state on drag enter', () => {
     render(<FolderDropZone onFolderDropped={vi.fn()} />);
 
-    const dropZone = screen.getByText('Drag and drop a folder').closest('div')!;
+    const dropZone = screen.getByTestId('folder-drop-zone');
 
     fireEvent.dragEnter(dropZone);
 
@@ -44,7 +44,7 @@ describe('FolderDropZone', () => {
     const onError = vi.fn();
     render(<FolderDropZone onFolderDropped={vi.fn()} onError={onError} />);
 
-    const dropZone = screen.getByText('Drag and drop a folder').closest('div')!;
+    const dropZone = screen.getByTestId('folder-drop-zone');
 
     // Create a mock file entry (not a directory)
     const mockFileEntry = {
@@ -74,7 +74,7 @@ describe('FolderDropZone', () => {
     const onError = vi.fn();
     render(<FolderDropZone onFolderDropped={vi.fn()} onError={onError} />);
 
-    const dropZone = screen.getByText('Drag and drop a folder').closest('div')!;
+    const dropZone = screen.getByTestId('folder-drop-zone');
 
     const mockDataTransfer = {
       items: {
@@ -92,7 +92,7 @@ describe('FolderDropZone', () => {
     const onError = vi.fn();
     render(<FolderDropZone onFolderDropped={vi.fn()} onError={onError} />);
 
-    const dropZone = screen.getByText('Drag and drop a folder').closest('div')!;
+    const dropZone = screen.getByTestId('folder-drop-zone');
 
     // First, create an error state
     const mockDataTransfer = {
@@ -117,9 +117,7 @@ describe('FolderDropZone', () => {
       <FolderDropZone onFolderDropped={vi.fn()} className="custom-class" />
     );
 
-    // The className is applied to the outer wrapper, which is the parent of the content div
-    const contentDiv = screen.getByText('Drag and drop a folder').closest('div')!;
-    const dropZone = contentDiv.parentElement!;
+    const dropZone = screen.getByTestId('folder-drop-zone');
     expect(dropZone).toHaveClass('custom-class');
   });
 });
