@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { X } from 'lucide-react';
 
 interface KeyboardShortcutsHelpProps {
@@ -5,16 +6,43 @@ interface KeyboardShortcutsHelpProps {
   onClose: () => void;
 }
 
-const shortcuts = [
-  { keys: ['/', 'Ctrl+K'], description: 'Focus search' },
-  { keys: ['j'], description: 'Next message' },
-  { keys: ['k'], description: 'Previous message' },
-  { keys: ['e'], description: 'Toggle expand/collapse' },
-  { keys: ['?'], description: 'Toggle this help' },
-  { keys: ['Esc'], description: 'Close search/help' },
-];
+/**
+ * Detects if the user is on a Mac using multiple detection methods.
+ * Uses userAgentData API when available, falling back to userAgent string.
+ */
+function detectMac(): boolean {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+
+  // Modern API: userAgentData (Chrome 90+, Edge 90+)
+  const userAgentData = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
+  if (userAgentData?.platform) {
+    return userAgentData.platform.toLowerCase() === 'macos';
+  }
+
+  // Fallback: check userAgent string
+  return /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
 
 export function KeyboardShortcutsHelp({ isOpen, onClose }: KeyboardShortcutsHelpProps) {
+  const shortcuts = useMemo(() => {
+    const isMac = detectMac();
+    const modKey = isMac ? 'Cmd' : 'Ctrl';
+
+    return [
+      { keys: ['/', `${modKey}+K`], description: 'Focus search' },
+      { keys: ['j'], description: 'Next message' },
+      { keys: ['k'], description: 'Previous message' },
+      { keys: ['e'], description: 'Toggle expand/collapse' },
+      { keys: [`${modKey}+O`], description: 'Open folder' },
+      { keys: [`${modKey}+\\`], description: 'Toggle sidebar' },
+      { keys: ['Arrow keys'], description: 'Navigate session tree' },
+      { keys: ['Enter'], description: 'Select session' },
+      { keys: ['?'], description: 'Toggle this help' },
+      { keys: ['Esc'], description: 'Close search/help' },
+    ];
+  }, []);
   if (!isOpen) return null;
 
   return (

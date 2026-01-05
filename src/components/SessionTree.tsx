@@ -1,8 +1,9 @@
-import { useState, useCallback, useEffect, type MouseEvent, type KeyboardEvent } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo, type MouseEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import type { SessionNode } from '../store/sessionStore';
 import { formatRelativeTime } from '../utils/formatters';
 import { parseSubAgentTitle } from '../utils/subAgentParsing';
+import { useKeyboardNavigation, flattenVisibleItems } from '../hooks/useKeyboardNavigation';
 
 export interface SessionTreeProps {
   nodes: SessionNode[];
@@ -12,7 +13,25 @@ export interface SessionTreeProps {
 }
 
 /**
+ * Adapts SessionNode tree to format needed by flattenVisibleItems
+ */
+interface FlattenableNode {
+  id: string;
+  children: FlattenableNode[];
+  parentId: string | null;
+}
+
+function toFlattenableNodes(nodes: SessionNode[], parentId: string | null = null): FlattenableNode[] {
+  return nodes.map(node => ({
+    id: node.session.id,
+    parentId,
+    children: toFlattenableNodes(node.children, node.session.id),
+  }));
+}
+
+/**
  * Renders a single session tree item with optional expand/collapse.
+ * Note: Children are rendered by the parent component (renderNode), not here.
  */
 function SessionTreeItem({
   node,
@@ -21,6 +40,9 @@ function SessionTreeItem({
   onSelect,
   expandedIds,
   onToggleExpand,
+  tabIndex,
+  itemRef,
+  isFocused,
 }: {
   node: SessionNode;
   depth: number;
@@ -28,6 +50,9 @@ function SessionTreeItem({
   onSelect: (sessionId: string) => void;
   expandedIds: Set<string>;
   onToggleExpand: (sessionId: string) => void;
+  tabIndex: 0 | -1;
+  itemRef: (el: HTMLElement | null) => void;
+  isFocused: boolean;
 }) {
   const hasChildren = node.children.length > 0;
   const isExpanded = expandedIds.has(node.session.id);
@@ -50,108 +75,75 @@ function SessionTreeItem({
     [onToggleExpand, node.session.id]
   );
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        onSelect(node.session.id);
-      } else if (hasChildren && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
-        e.preventDefault();
-        if (e.key === 'ArrowRight' && !isExpanded) {
-          onToggleExpand(node.session.id);
-        } else if (e.key === 'ArrowLeft' && isExpanded) {
-          onToggleExpand(node.session.id);
-        }
-      }
-    },
-    [hasChildren, isExpanded, onSelect, onToggleExpand, node.session.id]
-  );
-
   return (
-    <>
-      <div
-        role="treeitem"
-        tabIndex={0}
-        aria-current={isSelected ? 'true' : undefined}
-        aria-expanded={hasChildren ? isExpanded : undefined}
-        aria-selected={isSelected}
-        onClick={handleClick}
-        onKeyDown={handleKeyDown}
-        className={`
-          flex items-center gap-1.5 py-1.5 px-2 text-sm rounded-md cursor-pointer
-          transition-colors duration-150 ease-in-out
-          ${isSelected
-            ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200'
-            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}
-        `}
-        style={{ paddingLeft: `${paddingLeft}px` }}
-        data-testid="session-tree-item"
-      >
-        {/* Expand/collapse chevron */}
-        {hasChildren ? (
-          <button
-            type="button"
-            onClick={handleToggle}
-            aria-label={isExpanded ? 'Collapse' : 'Expand'}
-            className="flex-shrink-0 p-0.5 -ml-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-          >
-            {isExpanded ? (
-              <ChevronDown className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
-            ) : (
-              <ChevronRight className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
-            )}
-          </button>
-        ) : (
-          // Spacer to align items without children
-          <span className="w-3.5 flex-shrink-0" aria-hidden="true" />
-        )}
-
-        {/* Tree branch indicator for nested items */}
-        {depth > 0 && (
-          <span className="text-gray-400 dark:text-gray-500 text-xs flex-shrink-0" aria-hidden="true">
-            ├─
-          </span>
-        )}
-
-        {/* Sub-agent icon */}
-        {SubAgentIcon && (
-          <SubAgentIcon
-            className="w-3.5 h-3.5 flex-shrink-0 text-gray-500 dark:text-gray-400"
-            aria-hidden="true"
-          />
-        )}
-
-        {/* Title */}
-        <span className="flex-1 truncate" title={displayTitle}>
-          {displayTitle}
-        </span>
-
-        {/* Relative time */}
-        <span className="flex-shrink-0 text-xs text-gray-500 dark:text-gray-400 tabular-nums">
-          {formatRelativeTime(node.session.time.updated)}
-        </span>
-      </div>
-
-      {/* Children */}
-      {hasChildren && isExpanded && (
-        <div
-          role="group"
-          className="animate-in slide-in-from-top-1 duration-150"
+    <div
+      ref={itemRef}
+      role="treeitem"
+      tabIndex={tabIndex}
+      aria-current={isSelected ? 'true' : undefined}
+      aria-expanded={hasChildren ? isExpanded : undefined}
+      aria-selected={isSelected}
+      onClick={handleClick}
+      className={`
+        flex items-center gap-1.5 py-1.5 px-2 text-sm rounded-md cursor-pointer
+        transition-colors duration-150 ease-in-out
+        ${isSelected
+          ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200'
+          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}
+        ${isFocused && !isSelected
+          ? 'ring-2 ring-blue-400 dark:ring-blue-500 ring-inset'
+          : ''}
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 dark:focus-visible:ring-blue-500 focus-visible:ring-inset
+      `}
+      style={{ paddingLeft: `${paddingLeft}px` }}
+      data-testid="session-tree-item"
+      data-item-id={node.session.id}
+    >
+      {/* Expand/collapse chevron */}
+      {hasChildren ? (
+        <button
+          type="button"
+          onClick={handleToggle}
+          aria-label={isExpanded ? 'Collapse' : 'Expand'}
+          className="flex-shrink-0 p-0.5 -ml-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+          tabIndex={-1}
         >
-          {node.children.map((child) => (
-            <SessionTreeItem
-              key={child.session.id}
-              node={child}
-              depth={depth + 1}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              expandedIds={expandedIds}
-              onToggleExpand={onToggleExpand}
-            />
-          ))}
-        </div>
+          {isExpanded ? (
+            <ChevronDown className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
+          )}
+        </button>
+      ) : (
+        // Spacer to align items without children
+        <span className="w-3.5 flex-shrink-0" aria-hidden="true" />
       )}
-    </>
+
+      {/* Tree branch indicator for nested items */}
+      {depth > 0 && (
+        <span className="text-gray-400 dark:text-gray-500 text-xs flex-shrink-0" aria-hidden="true">
+          ├─
+        </span>
+      )}
+
+      {/* Sub-agent icon */}
+      {SubAgentIcon && (
+        <SubAgentIcon
+          className="w-3.5 h-3.5 flex-shrink-0 text-gray-500 dark:text-gray-400"
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Title */}
+      <span className="flex-1 truncate" title={displayTitle}>
+        {displayTitle}
+      </span>
+
+      {/* Relative time */}
+      <span className="flex-shrink-0 text-xs text-gray-500 dark:text-gray-400 tabular-nums">
+        {formatRelativeTime(node.session.time.updated)}
+      </span>
+    </div>
   );
 }
 
@@ -166,6 +158,8 @@ function SessionTreeItem({
  * - Relative time display
  * - Selected state highlight with aria-current
  * - Click to select
+ * - Keyboard navigation with arrow keys
+ * - Roving tabindex for accessibility
  */
 export function SessionTree({
   nodes,
@@ -173,6 +167,8 @@ export function SessionTree({
   onSelect,
   depth = 0,
 }: SessionTreeProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
   // Collect all expandable node IDs (nodes with children)
   const collectExpandableIds = useCallback((nodeList: SessionNode[]): Set<string> => {
     const ids = new Set<string>();
@@ -228,23 +224,85 @@ export function SessionTree({
     });
   }, []);
 
-  if (nodes.length === 0) {
-    return null;
-  }
+  const handleExpand = useCallback((sessionId: string) => {
+    setExpandedIds((prev) => {
+      if (prev.has(sessionId)) return prev;
+      const next = new Set(prev);
+      next.add(sessionId);
+      return next;
+    });
+  }, []);
 
-  return (
-    <div role="tree" data-testid="session-tree" aria-label="Session tree">
-      {nodes.map((node) => (
+  const handleCollapse = useCallback((sessionId: string) => {
+    setExpandedIds((prev) => {
+      if (!prev.has(sessionId)) return prev;
+      const next = new Set(prev);
+      next.delete(sessionId);
+      return next;
+    });
+  }, []);
+
+  // Flatten nodes for keyboard navigation
+  const flattenableNodes = useMemo(() => toFlattenableNodes(nodes), [nodes]);
+  const visibleItems = useMemo(
+    () => flattenVisibleItems(flattenableNodes, expandedIds),
+    [flattenableNodes, expandedIds]
+  );
+
+  const { focusedId, handleKeyDown, getTabIndex, getItemRef } = useKeyboardNavigation({
+    items: visibleItems,
+    selectedId,
+    onSelect,
+    onExpand: handleExpand,
+    onCollapse: handleCollapse,
+    containerRef,
+    enabled: nodes.length > 0,
+  });
+
+  // Recursive render function that passes keyboard navigation props
+  const renderNode = useCallback((node: SessionNode, nodeDepth: number): React.ReactNode => {
+    const hasChildren = node.children.length > 0;
+    const isExpanded = expandedIds.has(node.session.id);
+
+    return (
+      <div key={node.session.id}>
         <SessionTreeItem
-          key={node.session.id}
           node={node}
-          depth={depth}
+          depth={nodeDepth}
           selectedId={selectedId}
           onSelect={onSelect}
           expandedIds={expandedIds}
           onToggleExpand={handleToggleExpand}
+          tabIndex={getTabIndex(node.session.id)}
+          itemRef={getItemRef(node.session.id)}
+          isFocused={focusedId === node.session.id}
         />
-      ))}
+        {hasChildren && isExpanded && (
+          <div role="group" className="animate-in slide-in-from-top-1 duration-150">
+            {node.children.map((child) => renderNode(child, nodeDepth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  }, [expandedIds, selectedId, onSelect, handleToggleExpand, getTabIndex, getItemRef, focusedId]);
+
+  if (nodes.length === 0) {
+    return null;
+  }
+
+  const handleContainerKeyDown = (e: ReactKeyboardEvent) => {
+    handleKeyDown(e);
+  };
+
+  return (
+    <div 
+      ref={containerRef}
+      role="tree" 
+      data-testid="session-tree" 
+      aria-label="Session tree"
+      onKeyDown={handleContainerKeyDown}
+    >
+      {nodes.map((node) => renderNode(node, depth))}
     </div>
   );
 }

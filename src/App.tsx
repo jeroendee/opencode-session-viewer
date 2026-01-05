@@ -13,7 +13,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { groupMessages } from './utils/groupMessages';
 
 function App() {
-  const { fileSystem, session, sidebarOpen, setSidebarOpen, isLoadingSession } = useSessionStore();
+  const { fileSystem, session, sidebarOpen, setSidebarOpen, toggleSidebar, isLoadingSession, browseForFolder } = useSessionStore();
   const { activeMessageId, scrollToMessage } = useNavigation();
   const messageSidebarRef = useRef<MessageSidebarHandle>(null);
 
@@ -53,12 +53,25 @@ function App() {
     window.dispatchEvent(new CustomEvent('toggle-collapse', { detail: { messageId: activeMessageId } }));
   }, [activeMessageId]);
 
+  const handleOpenFolder = useCallback(() => {
+    // Only works when no folder is loaded - triggers folder picker via store action
+    if (!fileSystem) {
+      browseForFolder();
+    }
+  }, [fileSystem, browseForFolder]);
+
+  const handleToggleSidebar = useCallback(() => {
+    toggleSidebar();
+  }, [toggleSidebar]);
+
   const { showHelp, setShowHelp } = useKeyboardShortcuts({
     onFocusSearch: handleFocusSearch,
     onNextMessage: handleNextMessage,
     onPrevMessage: handlePrevMessage,
     onToggleCollapse: handleToggleCollapse,
-    enabled: !!session,
+    onOpenFolder: handleOpenFolder,
+    onToggleSidebar: handleToggleSidebar,
+    enabled: true, // Always enabled for global shortcuts
   });
 
   const handleCloseSidebar = useCallback(() => {

@@ -5,6 +5,8 @@ interface KeyboardShortcutsConfig {
   onNextMessage: () => void;
   onPrevMessage: () => void;
   onToggleCollapse: () => void;
+  onOpenFolder?: () => void;
+  onToggleSidebar?: () => void;
   enabled?: boolean;
 }
 
@@ -13,6 +15,8 @@ export function useKeyboardShortcuts({
   onNextMessage,
   onPrevMessage,
   onToggleCollapse,
+  onOpenFolder,
+  onToggleSidebar,
   enabled = true,
 }: KeyboardShortcutsConfig) {
   const [showHelp, setShowHelp] = useState(false);
@@ -28,11 +32,29 @@ export function useKeyboardShortcuts({
       return;
     }
 
-    // Ignore if modifier keys are pressed (except for Ctrl+K)
-    const hasModifier = e.metaKey || e.altKey;
-    const isCtrlK = e.ctrlKey && e.key === 'k';
+    // Handle Ctrl/Cmd shortcuts
+    const isMod = e.ctrlKey || e.metaKey;
     
-    if (hasModifier || (e.ctrlKey && !isCtrlK)) {
+    if (isMod) {
+      switch (e.key.toLowerCase()) {
+        case 'k':
+          e.preventDefault();
+          onFocusSearch();
+          return;
+        case 'o':
+          e.preventDefault();
+          onOpenFolder?.();
+          return;
+        case '\\':
+          e.preventDefault();
+          onToggleSidebar?.();
+          return;
+      }
+      return;
+    }
+
+    // Ignore other modifier combinations
+    if (e.altKey) {
       return;
     }
 
@@ -42,13 +64,8 @@ export function useKeyboardShortcuts({
         onFocusSearch();
         break;
       case 'k':
-        if (e.ctrlKey) {
-          e.preventDefault();
-          onFocusSearch();
-        } else {
-          // Navigate to previous message
-          onPrevMessage();
-        }
+        // Navigate to previous message
+        onPrevMessage();
         break;
       case 'j':
         // Navigate to next message
@@ -69,7 +86,7 @@ export function useKeyboardShortcuts({
         }
         break;
     }
-  }, [onFocusSearch, onNextMessage, onPrevMessage, onToggleCollapse, showHelp]);
+  }, [onFocusSearch, onNextMessage, onPrevMessage, onToggleCollapse, onOpenFolder, onToggleSidebar, showHelp]);
 
   useEffect(() => {
     if (!enabled) return;

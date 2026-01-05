@@ -56,6 +56,7 @@ interface SessionState {
   selectSession: (sessionId: string) => Promise<void>;
   loadUserMessages: () => Promise<void>;
   clearFolder: () => void;
+  browseForFolder: () => Promise<void>;
 }
 
 /**
@@ -339,5 +340,57 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       isLoadingMessages: false,
       loadError: null,
     });
+  },
+
+  browseForFolder: async () => {
+    // Check if File System Access API is supported
+    if (typeof window === 'undefined' || !('showDirectoryPicker' in window)) {
+      return;
+    }
+
+    try {
+      // Import the file system adapter dynamically to avoid circular dependencies
+      const { createFileSystemFromHandle } = await import('../lib/fileSystem');
+      const { loadAllSessions } = await import('../lib/sessionLoader');
+
+      const directoryHandle = await window.showDirectoryPicker();
+      const fs = createFileSystemFromHandle(directoryHandle);
+
+      set({ fileSystem: fs, isLoadingFolder: true, loadError: null });
+
+      // Load all sessions from the selected folder
+      const result = await loadAllSessions(fs);
+
+      // Build allSessions record from projects
+      const allSessions: Record<string, SessionInfo> = {};
+      const collectSessions = (nodes: SessionNode[]) => {
+        for (const node of nodes) {
+          allSessions[node.session.id] = node.session;
+          collectSessions(node.children);
+        }
+      };
+
+      for (const project of result.projects) {
+        collectSessions(project.sessions);
+      }
+
+      // Build flat sessionTree from all projects
+      const sessionTree: SessionNode[] = result.projects.flatMap((p) => p.sessions);
+
+      set({
+        projects: result.projects,
+        sessionTree,
+        allSessions,
+        isLoadingFolder: false,
+        loadError: null,
+      });
+    } catch (err) {
+      // User cancelled the picker or an error occurred
+      if (err instanceof Error && err.name !== 'AbortError') {
+        set({ loadError: err.message, isLoadingFolder: false });
+      } else {
+        set({ isLoadingFolder: false });
+      }
+    }
   },
 }));

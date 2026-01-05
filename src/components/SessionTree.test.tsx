@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { SessionTree, type SessionTreeProps } from './SessionTree';
 import type { SessionNode } from '../store/sessionStore';
@@ -248,14 +248,25 @@ describe('SessionTree', () => {
 
       renderTree({ nodes: [parent] });
 
-      const parentItem = screen.getByText('Parent session').closest('[role="treeitem"]')!;
+      const tree = screen.getByRole('tree');
 
-      // Press ArrowLeft to collapse
-      fireEvent.keyDown(parentItem, { key: 'ArrowLeft' });
+      // Focus the parent item
+      const parentItem = screen.getByText('Parent session').closest('[role="treeitem"]') as HTMLElement;
+      act(() => {
+        parentItem.focus();
+        parentItem.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+      });
+
+      // Press ArrowLeft on tree to collapse
+      act(() => {
+        fireEvent.keyDown(tree, { key: 'ArrowLeft' });
+      });
       expect(screen.queryByText('Child session')).not.toBeInTheDocument();
 
-      // Press ArrowRight to expand
-      fireEvent.keyDown(parentItem, { key: 'ArrowRight' });
+      // Press ArrowRight on tree to expand
+      act(() => {
+        fireEvent.keyDown(tree, { key: 'ArrowRight' });
+      });
       expect(screen.getByText('Child session')).toBeInTheDocument();
     });
   });
@@ -281,8 +292,19 @@ describe('SessionTree', () => {
 
       renderTree({ nodes });
 
-      const sessionItem = screen.getByText('Test session').closest('[role="treeitem"]')!;
-      fireEvent.keyDown(sessionItem, { key: 'Enter' });
+      const tree = screen.getByRole('tree');
+      const sessionItem = screen.getByText('Test session').closest('[role="treeitem"]') as HTMLElement;
+      
+      // Focus the item first
+      act(() => {
+        sessionItem.focus();
+        sessionItem.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+      });
+      
+      // Press Enter on the tree container
+      act(() => {
+        fireEvent.keyDown(tree, { key: 'Enter' });
+      });
 
       expect(mockOnSelect).toHaveBeenCalledWith('session-1');
     });
@@ -294,8 +316,19 @@ describe('SessionTree', () => {
 
       renderTree({ nodes });
 
-      const sessionItem = screen.getByText('Test session').closest('[role="treeitem"]')!;
-      fireEvent.keyDown(sessionItem, { key: ' ' });
+      const tree = screen.getByRole('tree');
+      const sessionItem = screen.getByText('Test session').closest('[role="treeitem"]') as HTMLElement;
+      
+      // Focus the item first
+      act(() => {
+        sessionItem.focus();
+        sessionItem.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+      });
+      
+      // Press Space on the tree container
+      act(() => {
+        fireEvent.keyDown(tree, { key: ' ' });
+      });
 
       expect(mockOnSelect).toHaveBeenCalledWith('session-1');
     });
@@ -430,8 +463,8 @@ describe('SessionTree', () => {
       // Tree container
       expect(screen.getByRole('tree')).toBeInTheDocument();
 
-      // Tree items
-      const items = screen.getAllByRole('treeitem');
+      // Find tree items by test id for reliable counting
+      const items = screen.getAllByTestId('session-tree-item');
       expect(items).toHaveLength(2);
 
       // Parent has aria-expanded
@@ -441,15 +474,222 @@ describe('SessionTree', () => {
       expect(items[1]).not.toHaveAttribute('aria-expanded');
     });
 
-    it('tree items are keyboard focusable', () => {
+    it('first item is focusable by default (roving tabindex)', () => {
       const nodes = [
-        createMockSessionNode(createMockSessionInfo('session-1', 'Test session')),
+        createMockSessionNode(createMockSessionInfo('session-1', 'First session')),
+        createMockSessionNode(createMockSessionInfo('session-2', 'Second session')),
       ];
 
       renderTree({ nodes });
 
-      const item = screen.getByRole('treeitem');
-      expect(item).toHaveAttribute('tabIndex', '0');
+      const items = screen.getAllByRole('treeitem');
+      // First item should be focusable
+      expect(items[0]).toHaveAttribute('tabIndex', '0');
+      // Other items should not be in tab order
+      expect(items[1]).toHaveAttribute('tabIndex', '-1');
+    });
+
+    it('selected item is focusable when nothing else is focused', () => {
+      const nodes = [
+        createMockSessionNode(createMockSessionInfo('session-1', 'First session')),
+        createMockSessionNode(createMockSessionInfo('session-2', 'Second session')),
+      ];
+
+      renderTree({ nodes, selectedId: 'session-2' });
+
+      const items = screen.getAllByRole('treeitem');
+      // Selected item should be focusable
+      expect(items[1]).toHaveAttribute('tabIndex', '0');
+      expect(items[0]).toHaveAttribute('tabIndex', '-1');
+    });
+  });
+
+  describe('keyboard navigation', () => {
+    // Helper to simulate focus on an item which triggers the focusin event
+    const focusItem = (item: HTMLElement) => {
+      act(() => {
+        // Focus the item - this will trigger focusin event which the hook listens to
+        item.focus();
+        // Dispatch focusin event manually since JSDOM doesn't always bubble correctly
+        item.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+      });
+    };
+
+    it('navigates down with ArrowDown', () => {
+      const nodes = [
+        createMockSessionNode(createMockSessionInfo('session-1', 'First session')),
+        createMockSessionNode(createMockSessionInfo('session-2', 'Second session')),
+        createMockSessionNode(createMockSessionInfo('session-3', 'Third session')),
+      ];
+
+      renderTree({ nodes });
+
+      const tree = screen.getByRole('tree');
+      const items = screen.getAllByRole('treeitem');
+
+      // Focus first item
+      focusItem(items[0]);
+
+      // Navigate down
+      act(() => {
+        fireEvent.keyDown(tree, { key: 'ArrowDown' });
+      });
+
+      // Second item should now be focused (tabindex 0)
+      expect(items[1]).toHaveAttribute('tabIndex', '0');
+      expect(items[0]).toHaveAttribute('tabIndex', '-1');
+    });
+
+    it('navigates up with ArrowUp', () => {
+      const nodes = [
+        createMockSessionNode(createMockSessionInfo('session-1', 'First session')),
+        createMockSessionNode(createMockSessionInfo('session-2', 'Second session')),
+        createMockSessionNode(createMockSessionInfo('session-3', 'Third session')),
+      ];
+
+      renderTree({ nodes });
+
+      const tree = screen.getByRole('tree');
+      const items = screen.getAllByRole('treeitem');
+
+      // Focus second item directly
+      focusItem(items[1]);
+
+      // Now navigate up
+      act(() => {
+        fireEvent.keyDown(tree, { key: 'ArrowUp' });
+      });
+
+      // First item should be focused
+      expect(items[0]).toHaveAttribute('tabIndex', '0');
+      expect(items[1]).toHaveAttribute('tabIndex', '-1');
+    });
+
+    it('wraps from last to first with ArrowDown', () => {
+      const nodes = [
+        createMockSessionNode(createMockSessionInfo('session-1', 'First session')),
+        createMockSessionNode(createMockSessionInfo('session-2', 'Second session')),
+      ];
+
+      renderTree({ nodes });
+
+      const tree = screen.getByRole('tree');
+      const items = screen.getAllByRole('treeitem');
+
+      // Focus last item
+      focusItem(items[1]);
+
+      // Navigate down (should wrap)
+      act(() => {
+        fireEvent.keyDown(tree, { key: 'ArrowDown' });
+      });
+
+      // Should wrap to first
+      expect(items[0]).toHaveAttribute('tabIndex', '0');
+    });
+
+    it('navigates to parent with ArrowLeft on leaf node', () => {
+      const child = createMockSessionNode(
+        createMockSessionInfo('child', 'Child session')
+      );
+      const parent = createMockSessionNode(
+        createMockSessionInfo('parent', 'Parent session'),
+        [child]
+      );
+
+      renderTree({ nodes: [parent] });
+
+      const tree = screen.getByRole('tree');
+      const items = screen.getAllByRole('treeitem');
+
+      // Focus on child (second item since parent is expanded)
+      focusItem(items[1]);
+
+      // Press ArrowLeft to go to parent
+      act(() => {
+        fireEvent.keyDown(tree, { key: 'ArrowLeft' });
+      });
+
+      // Parent should now be focused
+      expect(items[0]).toHaveAttribute('tabIndex', '0');
+      expect(items[1]).toHaveAttribute('tabIndex', '-1');
+    });
+
+    it('moves to first child with ArrowRight on expanded parent', () => {
+      const child = createMockSessionNode(
+        createMockSessionInfo('child', 'Child session')
+      );
+      const parent = createMockSessionNode(
+        createMockSessionInfo('parent', 'Parent session'),
+        [child]
+      );
+
+      renderTree({ nodes: [parent] });
+
+      const tree = screen.getByRole('tree');
+      const items = screen.getAllByRole('treeitem');
+
+      // Focus parent
+      focusItem(items[0]);
+
+      // Press ArrowRight - already expanded, should move to child
+      act(() => {
+        fireEvent.keyDown(tree, { key: 'ArrowRight' });
+      });
+
+      // Child should now be focused
+      expect(items[1]).toHaveAttribute('tabIndex', '0');
+      expect(items[0]).toHaveAttribute('tabIndex', '-1');
+    });
+
+    it('navigates to first item with Home', () => {
+      const nodes = [
+        createMockSessionNode(createMockSessionInfo('session-1', 'First session')),
+        createMockSessionNode(createMockSessionInfo('session-2', 'Second session')),
+        createMockSessionNode(createMockSessionInfo('session-3', 'Third session')),
+      ];
+
+      renderTree({ nodes });
+
+      const tree = screen.getByRole('tree');
+      const items = screen.getAllByRole('treeitem');
+
+      // Focus third item
+      focusItem(items[2]);
+
+      // Press Home
+      act(() => {
+        fireEvent.keyDown(tree, { key: 'Home' });
+      });
+
+      // First item should be focused
+      expect(items[0]).toHaveAttribute('tabIndex', '0');
+      expect(items[2]).toHaveAttribute('tabIndex', '-1');
+    });
+
+    it('navigates to last item with End', () => {
+      const nodes = [
+        createMockSessionNode(createMockSessionInfo('session-1', 'First session')),
+        createMockSessionNode(createMockSessionInfo('session-2', 'Second session')),
+        createMockSessionNode(createMockSessionInfo('session-3', 'Third session')),
+      ];
+
+      renderTree({ nodes });
+
+      const tree = screen.getByRole('tree');
+      const items = screen.getAllByRole('treeitem');
+
+      // Focus first item
+      focusItem(items[0]);
+
+      // Press End
+      act(() => {
+        fireEvent.keyDown(tree, { key: 'End' });
+      });
+
+      // Last item should be focused
+      expect(items[2]).toHaveAttribute('tabIndex', '0');
+      expect(items[0]).toHaveAttribute('tabIndex', '-1');
     });
   });
 });
