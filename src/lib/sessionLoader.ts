@@ -34,6 +34,11 @@ interface BuildSessionTreeResult {
  * Builds a tree of session nodes from a flat list of sessions.
  * Sessions with parentID become children of their parent session.
  * Detects and breaks circular parent references to prevent infinite loops.
+ * 
+ * DESIGN NOTE: This function operates on sessions within a single project.
+ * Parent-child relationships are assumed to exist within the same project.
+ * If a session's parentID references a session outside this set (e.g., in
+ * another project or non-existent), it will be treated as a root node.
  */
 function buildSessionTree(sessions: SessionInfo[]): BuildSessionTreeResult {
   const nodeMap = new Map<string, SessionNode>();
