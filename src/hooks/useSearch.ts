@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { Session, Part } from '../types/session';
-import { isTextPart, isToolPart, isReasoningPart, isToolCompleted, isToolError } from '../types/session';
+import { isTextPart, isToolPart, isReasoningPart, isToolCompleted, isToolError, isAssistantMessage } from '../types/session';
 
 export interface SearchResult {
   messageId: string;
@@ -69,7 +69,11 @@ function searchSession(session: Session, query: string): SearchResult[] {
   const lowerQuery = query.toLowerCase();
 
   for (const message of session.messages) {
-    const messageType = message.info.role;
+    // Use parentID for assistant messages to align with MessageIndex grouping.
+    // If parentID is absent, use the message's own ID.
+    const groupMessageId = isAssistantMessage(message) 
+      ? (message.info.parentID ?? message.info.id)
+      : message.info.id;
 
     for (const part of message.parts) {
       const text = getPartText(part);
@@ -79,13 +83,13 @@ function searchSession(session: Session, query: string): SearchResult[] {
       const matchIndex = lowerText.indexOf(lowerQuery);
 
       if (matchIndex !== -1) {
-        // Determine result type
-        let type: SearchResult['type'] = messageType;
+        // Determine result type based on message role and part type
+        let type: SearchResult['type'] = message.info.role;
         if (isToolPart(part)) type = 'tool';
         if (isReasoningPart(part)) type = 'reasoning';
 
         results.push({
-          messageId: message.info.id,
+          messageId: groupMessageId,
           partId: part.id,
           type,
           matchText: text.substring(matchIndex, matchIndex + query.length),
