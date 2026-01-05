@@ -1,9 +1,11 @@
-import { useState } from 'react';
-import { Check, X, Loader2, ChevronDown, ChevronRight, Clock } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Check, X, Loader2, ChevronDown, ChevronRight, Clock, ExternalLink } from 'lucide-react';
 import type { ToolPart as ToolPartType } from '../../types/session';
 import { isToolCompleted, isToolError } from '../../types/session';
 import { ToolIcon } from './toolIcons';
 import { formatDurationCompact } from '../../utils/formatters';
+import { useSessionNavigation } from '../../contexts/SessionNavigationContext';
+import { findSpawnedSession } from '../../utils/subtaskMatcher';
 
 interface ToolPartProps {
   part: ToolPartType;
@@ -33,8 +35,26 @@ function formatInput(input: unknown): string {
   }
 }
 
+/**
+ * Extracts task tool parameters from input to find spawned session.
+ */
+function getTaskParams(input: unknown): { agent: string; description: string } | null {
+  if (typeof input !== 'object' || input === null) return null;
+  const obj = input as Record<string, unknown>;
+  
+  // Task tool uses subagent_type for agent
+  const agent = obj.subagent_type;
+  const description = obj.description;
+  
+  if (typeof agent === 'string' && typeof description === 'string') {
+    return { agent, description };
+  }
+  return null;
+}
+
 export function ToolPart({ part }: ToolPartProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const sessionNav = useSessionNavigation();
 
   const { state } = part;
   const title = isToolCompleted(state) ? state.title : undefined;
@@ -45,6 +65,35 @@ export function ToolPart({ part }: ToolPartProps) {
   if (isToolCompleted(state) || isToolError(state)) {
     duration = state.time.end - state.time.start;
   }
+
+  // For task tools, find the spawned session
+  const spawnedSession = useMemo(() => {
+    if (part.tool !== 'task' || !sessionNav || !hasDetails) return null;
+    
+    const input = isToolCompleted(state) || isToolError(state) ? state.input : null;
+    const taskParams = input ? getTaskParams(input) : null;
+    if (!taskParams) return null;
+    
+    // Create a pseudo-subtask to use the existing matcher
+    const pseudoSubtask = {
+      id: part.id,
+      sessionID: part.sessionID,
+      messageID: part.messageID,
+      type: 'subtask' as const,
+      agent: taskParams.agent,
+      description: taskParams.description,
+      prompt: '',
+    };
+    
+    return findSpawnedSession(pseudoSubtask, sessionNav.allSessions);
+  }, [part.tool, part.id, part.sessionID, part.messageID, sessionNav?.allSessions, state, hasDetails]);
+
+  const handleViewSession = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (spawnedSession && sessionNav) {
+      sessionNav.navigateToSession(spawnedSession.id);
+    }
+  };
 
   return (
     <div className="my-2">
@@ -130,13 +179,33 @@ export function ToolPart({ part }: ToolPartProps) {
             </div>
           )}
 
-          {/* Duration */}
-          {duration !== undefined && (
-            <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-              <Clock className="w-3 h-3" />
-              <span>Duration: {formatDurationCompact(duration)}</span>
-            </div>
-          )}
+          {/* Duration and View Session button */}
+          <div className="flex items-center justify-between">
+            {duration !== undefined && (
+              <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                <Clock className="w-3 h-3" />
+                <span>Duration: {formatDurationCompact(duration)}</span>
+              </div>
+            )}
+            
+            {/* View Session button for task tools */}
+            {spawnedSession && (
+              <button
+                onClick={handleViewSession}
+                className="
+                  inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md
+                  bg-blue-100 dark:bg-blue-900/50
+                  text-blue-700 dark:text-blue-300
+                  hover:bg-blue-200 dark:hover:bg-blue-800
+                  text-sm font-medium transition-colors
+                "
+                aria-label={`View session: ${spawnedSession.title}`}
+              >
+                <ExternalLink className="w-4 h-4" />
+                <span>View Session</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
