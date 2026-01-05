@@ -5,21 +5,34 @@ import { SessionBrowser } from './components/SessionBrowser';
 import { FolderPicker } from './components/FolderPicker';
 import { SelectSessionPrompt } from './components/SelectSessionPrompt';
 import { MessageList } from './components/MessageList';
+import { SubAgentTree } from './components/SubAgentTree';
 import { KeyboardShortcutsHelp } from './components/KeyboardShortcutsHelp';
 import { SkeletonContent } from './components/SkeletonLoader';
 import { useSessionStore } from './store/sessionStore';
 import { useNavigation } from './hooks/useNavigation';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { groupMessages } from './utils/groupMessages';
+import { getChildSessions } from './utils/sessionTreeUtils';
 
 function App() {
-  const { fileSystem, session, sidebarOpen, setSidebarOpen, toggleSidebar, isLoadingSession, browseForFolder } = useSessionStore();
+  const { fileSystem, session, sidebarOpen, setSidebarOpen, toggleSidebar, isLoadingSession, browseForFolder, sessionTree, selectedSessionId, selectSession } = useSessionStore();
   const { activeMessageId, scrollToMessage } = useNavigation();
   const messageSidebarRef = useRef<MessageSidebarHandle>(null);
 
   const groups = useMemo(() => {
     return session ? groupMessages(session.messages) : [];
   }, [session]);
+
+  // Get child sessions for the current session
+  const childSessions = useMemo(() => {
+    if (!selectedSessionId) return [];
+    return getChildSessions(sessionTree, selectedSessionId);
+  }, [sessionTree, selectedSessionId]);
+
+  // Handler for navigating to a sub-agent session
+  const handleNavigateToSubAgent = useCallback((sessionId: string) => {
+    selectSession(sessionId);
+  }, [selectSession]);
 
   const currentIndex = useMemo(() => {
     if (!activeMessageId || groups.length === 0) return -1;
@@ -102,7 +115,19 @@ function App() {
           {isLoadingSession ? (
             <SkeletonContent />
           ) : session ? (
-            <MessageList />
+            <div className="flex-1 overflow-y-auto">
+              {/* Sub-agent tree shown above messages when session has children */}
+              {childSessions.length > 0 && selectedSessionId && (
+                <div className="px-4 pt-4">
+                  <SubAgentTree
+                    sessionId={selectedSessionId}
+                    childSessions={childSessions}
+                    onNavigate={handleNavigateToSubAgent}
+                  />
+                </div>
+              )}
+              <MessageList />
+            </div>
           ) : (
             <SelectSessionPrompt />
           )}
