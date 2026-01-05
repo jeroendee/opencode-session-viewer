@@ -2,6 +2,8 @@ import { User } from 'lucide-react';
 import type { UserMessage as UserMessageType } from '../types/session';
 import { isTextPart, isFilePart } from '../types/session';
 import { formatTime } from '../utils/formatters';
+import { useSearchContextSafe } from '../contexts/SearchContext';
+import { HighlightedText } from '../utils/highlightText';
 
 interface UserMessageProps {
   message: UserMessageType;
@@ -9,6 +11,8 @@ interface UserMessageProps {
 }
 
 export function UserMessage({ message, index }: UserMessageProps) {
+  const { searchQuery } = useSearchContextSafe();
+
   // Extract text content from parts
   const textContent = message.parts
     .filter(isTextPart)
@@ -40,7 +44,11 @@ export function UserMessage({ message, index }: UserMessageProps) {
 
       {/* Content */}
       <div className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">
-        {textContent || <span className="italic text-gray-500">No text content</span>}
+        {textContent ? (
+          <HighlightedText text={textContent} query={searchQuery} />
+        ) : (
+          <span className="italic text-gray-500">No text content</span>
+        )}
       </div>
 
       {/* File attachments indicator */}
