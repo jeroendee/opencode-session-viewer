@@ -64,8 +64,15 @@ function createMockFileSystem(files: Record<string, string>): VirtualFileSystem 
 
 /**
  * Creates a valid session JSON string for testing.
+ * Supports both the actual OpenCode format (flat) and legacy nested format.
+ * 
+ * @param overrides - Partial session info to override defaults
+ * @param format - 'flat' for actual OpenCode format, 'nested' for legacy {info: ...} format
  */
-function createSessionJson(overrides: Partial<SessionInfo> = {}): string {
+function createSessionJson(
+  overrides: Partial<SessionInfo> = {},
+  format: 'flat' | 'nested' = 'flat'
+): string {
   const defaultSession: SessionInfo = {
     id: 'session-1',
     version: '1.0',
@@ -78,7 +85,11 @@ function createSessionJson(overrides: Partial<SessionInfo> = {}): string {
     },
     ...overrides,
   };
-  return JSON.stringify({ info: defaultSession, messages: [] });
+  
+  if (format === 'nested') {
+    return JSON.stringify({ info: defaultSession, messages: [] });
+  }
+  return JSON.stringify(defaultSession);
 }
 
 describe('loadAllSessions', () => {
@@ -242,6 +253,61 @@ describe('loadAllSessions', () => {
 
     expect(Object.keys(result.sessions)).toEqual([]);
     expect(result.errorCount).toBe(1);
+  });
+
+  it('parses flat session JSON format (actual OpenCode format)', async () => {
+    // This is the actual format used by OpenCode - data at root level
+    const fs = createMockFileSystem({
+      'session/proj-1/sess-1.json': createSessionJson({
+        id: 'flat-session',
+        projectID: 'proj-1',
+        title: 'Flat Format Session',
+      }, 'flat'),
+    });
+
+    const result = await loadAllSessions(fs);
+
+    expect(result.projects).toHaveLength(1);
+    expect(result.sessions['flat-session']).toBeDefined();
+    expect(result.sessions['flat-session'].title).toBe('Flat Format Session');
+  });
+
+  it('parses nested session JSON format (legacy format)', async () => {
+    // Legacy format with data nested under 'info' key
+    const fs = createMockFileSystem({
+      'session/proj-1/sess-1.json': createSessionJson({
+        id: 'nested-session',
+        projectID: 'proj-1',
+        title: 'Nested Format Session',
+      }, 'nested'),
+    });
+
+    const result = await loadAllSessions(fs);
+
+    expect(result.projects).toHaveLength(1);
+    expect(result.sessions['nested-session']).toBeDefined();
+    expect(result.sessions['nested-session'].title).toBe('Nested Format Session');
+  });
+
+  it('handles mixed flat and nested session formats in same project', async () => {
+    const fs = createMockFileSystem({
+      'session/proj-1/flat.json': createSessionJson({
+        id: 'flat-sess',
+        projectID: 'proj-1',
+        title: 'Flat',
+      }, 'flat'),
+      'session/proj-1/nested.json': createSessionJson({
+        id: 'nested-sess',
+        projectID: 'proj-1',
+        title: 'Nested',
+      }, 'nested'),
+    });
+
+    const result = await loadAllSessions(fs);
+
+    expect(Object.keys(result.sessions).sort()).toEqual(['flat-sess', 'nested-sess']);
+    expect(result.sessions['flat-sess'].title).toBe('Flat');
+    expect(result.sessions['nested-sess'].title).toBe('Nested');
   });
 
   it('builds session tree with parent-child relationships', async () => {

@@ -189,6 +189,10 @@ export async function getFileHandle(
       if (error.name === 'NotFoundError') {
         return null;
       }
+      // TypeMismatchError means the path exists but is a directory, not a file
+      if (error.name === 'TypeMismatchError') {
+        return null;
+      }
       if (error.name === 'NotAllowedError') {
         throw new FileSystemError(`Permission denied for file: ${name}`, 'PERMISSION_DENIED');
       }

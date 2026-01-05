@@ -173,12 +173,10 @@ function parseSessionJson(content: string): SessionInfo | null {
   try {
     const data = JSON.parse(content);
 
-    // Validate required fields
-    if (!data.info || typeof data.info !== 'object') {
-      return null;
-    }
+    // Session data can be at root level or nested under 'info'
+    const info = data.info && typeof data.info === 'object' ? data.info : data;
 
-    const info = data.info;
+    // Validate required fields
     if (
       typeof info.id !== 'string' ||
       typeof info.projectID !== 'string' ||
