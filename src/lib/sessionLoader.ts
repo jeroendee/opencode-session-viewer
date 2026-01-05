@@ -4,6 +4,30 @@ import type { ProjectInfo, SessionNode } from '../store/sessionStore';
 import { StorageError } from './errors';
 
 /**
+ * Logger interface for sessionLoader functions.
+ * Allows callers to inject custom logging behavior or suppress logs.
+ */
+export interface SessionLoaderLogger {
+  warn: (message: string) => void;
+}
+
+/**
+ * Default logger that outputs to console.
+ * Can be replaced with a no-op logger for tests or production.
+ */
+export const defaultLogger: SessionLoaderLogger = {
+  warn: (message: string) => console.warn(message),
+};
+
+/**
+ * Silent logger that suppresses all output.
+ * Useful for tests or when logs are not wanted.
+ */
+export const silentLogger: SessionLoaderLogger = {
+  warn: () => {},
+};
+
+/**
  * Result of loading all sessions from storage.
  */
 export interface LoadSessionsResult {
@@ -40,7 +64,10 @@ interface BuildSessionTreeResult {
  * If a session's parentID references a session outside this set (e.g., in
  * another project or non-existent), it will be treated as a root node.
  */
-function buildSessionTree(sessions: SessionInfo[]): BuildSessionTreeResult {
+function buildSessionTree(
+  sessions: SessionInfo[],
+  logger: SessionLoaderLogger = defaultLogger
+): BuildSessionTreeResult {
   const nodeMap = new Map<string, SessionNode>();
   const roots: SessionNode[] = [];
   let circularRefCount = 0;
@@ -98,7 +125,7 @@ function buildSessionTree(sessions: SessionInfo[]): BuildSessionTreeResult {
 
     // Check for self-reference
     if (session.parentID === session.id) {
-      console.warn(`Session ${session.id} has self-referential parentID, treating as root`);
+      logger.warn(`Session ${session.id} has self-referential parentID, treating as root`);
       circularRefCount++;
       roots.push(node);
       continue;
@@ -106,7 +133,7 @@ function buildSessionTree(sessions: SessionInfo[]): BuildSessionTreeResult {
 
     // Check if this is a cycle break point
     if (cycleBreakPoints.has(session.id)) {
-      console.warn(
+      logger.warn(
         `Circular parent reference detected for session ${session.id}, treating as root`
       );
       circularRefCount++;
@@ -181,7 +208,8 @@ function parseSessionJson(content: string): SessionInfo | null {
  * @returns Projects with their session trees and a flat lookup map of all sessions
  */
 export async function loadAllSessions(
-  fs: VirtualFileSystem
+  fs: VirtualFileSystem,
+  logger: SessionLoaderLogger = defaultLogger
 ): Promise<LoadSessionsResult> {
   const projects: ProjectInfo[] = [];
   const sessions: Record<string, SessionInfo> = {};
@@ -192,7 +220,7 @@ export async function loadAllSessions(
   try {
     projectIds = await fs.listDirectory(['session']);
   } catch (error) {
-    console.warn(`Failed to list session directory: ${error}`);
+    logger.warn(`Failed to list session directory: ${error}`);
     throw new StorageError(
       'Could not find session directory. This may not be an OpenCode storage folder.',
       'NOT_STORAGE_FOLDER'
@@ -229,7 +257,7 @@ export async function loadAllSessions(
           }
         } catch {
           // Use default path if project.json is invalid
-          console.warn(`Failed to parse project.json for project ${projectId}`);
+          logger.warn(`Failed to parse project.json for project ${projectId}`);
         }
       }
 
@@ -238,7 +266,7 @@ export async function loadAllSessions(
       try {
         sessionFiles = await fs.listDirectory(['session', projectId]);
       } catch (error) {
-        console.warn(`Failed to list sessions for project ${projectId}: ${error}`);
+        logger.warn(`Failed to list sessions for project ${projectId}: ${error}`);
         errorCount++;
         return null;
       }
@@ -274,17 +302,17 @@ export async function loadAllSessions(
         } else {
           errorCount++;
           if (result.error === 'missing') {
-            console.warn(`Missing session file content: ${result.sessionId}`);
+            logger.warn(`Missing session file content: ${result.sessionId}`);
           } else if (result.error === 'read') {
-            console.warn(`Failed to read session file: ${result.sessionId}`);
+            logger.warn(`Failed to read session file: ${result.sessionId}`);
           } else {
-            console.warn(`Failed to parse session file: ${result.sessionId}`);
+            logger.warn(`Failed to parse session file: ${result.sessionId}`);
           }
         }
       }
 
       // Build session tree for this project
-      const treeResult = buildSessionTree(projectSessions);
+      const treeResult = buildSessionTree(projectSessions, logger);
 
       return {
         project: {
@@ -295,7 +323,7 @@ export async function loadAllSessions(
         circularRefCount: treeResult.circularRefCount,
       };
     } catch (error) {
-      console.warn(`Failed to load project ${projectId}: ${error}`);
+      logger.warn(`Failed to load project ${projectId}: ${error}`);
       errorCount++;
       return null;
     }
@@ -335,7 +363,8 @@ export async function loadAllSessions(
 export async function loadSessionContent(
   sessionId: string,
   allSessions: Record<string, SessionInfo>,
-  fs: VirtualFileSystem
+  fs: VirtualFileSystem,
+  logger: SessionLoaderLogger = defaultLogger
 ): Promise<Session> {
   // 1. Get session info from allSessions (already loaded)
   const info = allSessions[sessionId];
@@ -348,7 +377,7 @@ export async function loadSessionContent(
   try {
     messageFiles = await fs.listDirectory(['message', sessionId]);
   } catch (error) {
-    console.warn(`Failed to list messages for session ${sessionId}: ${error}`);
+    logger.warn(`Failed to list messages for session ${sessionId}: ${error}`);
     // Return session with empty messages if we can't list the directory
     return { info, messages: [] };
   }
@@ -365,7 +394,7 @@ export async function loadSessionContent(
     try {
       msgJson = await fs.readFile(['message', sessionId, msgFile]);
     } catch {
-      console.warn(`Failed to read message file: ${msgFile}`);
+      logger.warn(`Failed to read message file: ${msgFile}`);
       continue;
     }
     if (!msgJson) continue;
@@ -374,7 +403,7 @@ export async function loadSessionContent(
     try {
       msgInfo = JSON.parse(msgJson) as MessageInfo;
     } catch {
-      console.warn(`Failed to parse message file: ${msgFile}`);
+      logger.warn(`Failed to parse message file: ${msgFile}`);
       continue;
     }
 
@@ -383,7 +412,7 @@ export async function loadSessionContent(
     try {
       partFiles = await fs.listDirectory(['part', msgId]);
     } catch {
-      console.warn(`Failed to list parts for message ${msgId}`);
+      logger.warn(`Failed to list parts for message ${msgId}`);
       // Message with no parts is still valid
       partFiles = [];
     }
@@ -399,7 +428,7 @@ export async function loadSessionContent(
       try {
         partJson = await fs.readFile(['part', msgId, partFile]);
       } catch {
-        console.warn(`Failed to read part file: ${partFile}`);
+        logger.warn(`Failed to read part file: ${partFile}`);
         continue;
       }
       if (!partJson) continue;
@@ -408,7 +437,7 @@ export async function loadSessionContent(
         const part = JSON.parse(partJson) as Part;
         parts.push(part);
       } catch {
-        console.warn(`Failed to parse part file: ${partFile}`);
+        logger.warn(`Failed to parse part file: ${partFile}`);
       }
     }
 
