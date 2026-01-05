@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, forwardRef } from 'react';
-import { Search, X } from 'lucide-react';
+import { Search, X, Loader2 } from 'lucide-react';
 
 interface SearchBarProps {
   value: string;
@@ -7,6 +7,8 @@ interface SearchBarProps {
   onClear: () => void;
   resultCount: number;
   debounceMs?: number;
+  /** External loading indicator (e.g., when loading messages for search) */
+  isLoading?: boolean;
 }
 
 export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBar({
@@ -15,8 +17,10 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function S
   onClear,
   resultCount,
   debounceMs = 300,
+  isLoading = false,
 }, ref) {
   const [localValue, setLocalValue] = useState(value);
+  const [isPendingDebounce, setIsPendingDebounce] = useState(false);
 
   // Sync local value when external value changes
   useEffect(() => {
@@ -25,14 +29,32 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function S
 
   // Debounce the onChange callback
   useEffect(() => {
+    // If localValue is empty/whitespace, clear pending state immediately
+    if (!localValue.trim()) {
+      setIsPendingDebounce(false);
+      if (localValue !== value) {
+        onChange(localValue);
+      }
+      return;
+    }
+
+    // Mark as pending when local value differs from parent value
+    if (localValue !== value) {
+      setIsPendingDebounce(true);
+    }
+
     const timer = setTimeout(() => {
       if (localValue !== value) {
         onChange(localValue);
       }
+      setIsPendingDebounce(false);
     }, debounceMs);
 
     return () => clearTimeout(timer);
   }, [localValue, value, onChange, debounceMs]);
+
+  // Show loading when debouncing or when externally loading
+  const showLoading = isPendingDebounce || isLoading;
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setLocalValue(e.target.value);
@@ -66,14 +88,16 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function S
         aria-label="Search messages"
       />
 
-      {/* Result count and clear button */}
+      {/* Result count, loading indicator, and clear button */}
       {localValue && (
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-          {resultCount > 0 && (
+          {showLoading ? (
+            <Loader2 className="w-4 h-4 text-gray-400 animate-spin" aria-label="Searching" />
+          ) : resultCount > 0 ? (
             <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
               {resultCount} match{resultCount !== 1 ? 'es' : ''}
             </span>
-          )}
+          ) : null}
           <button
             onClick={handleClear}
             className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded"

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Search, ChevronRight, ChevronDown, FolderOpen } from 'lucide-react';
 import { useSessionStore, type ProjectInfo, type SessionNode } from '../store/sessionStore';
+import { LoadingSpinner } from './LoadingSpinner';
 
 interface SessionBrowserProps {
   sidebarOpen: boolean;
@@ -138,7 +139,7 @@ function ProjectGroup({
  * - Change folder button
  */
 export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserProps) {
-  const { projects, selectedSessionId, selectSession, clearFolder } = useSessionStore();
+  const { projects, selectedSessionId, selectSession, clearFolder, isLoadingFolder } = useSessionStore();
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => {
     // Start with all projects expanded
     return new Set(projects.map((p) => p.id));
@@ -229,7 +230,11 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
         <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
           Projects
         </h3>
-        {projects.length === 0 ? (
+        {isLoadingFolder ? (
+          <div className="flex flex-col items-center justify-center py-8">
+            <LoadingSpinner label="Loading sessions..." />
+          </div>
+        ) : projects.length === 0 ? (
           <p className="text-sm text-gray-500 dark:text-gray-400">No projects loaded</p>
         ) : (
           <div className="space-y-1">

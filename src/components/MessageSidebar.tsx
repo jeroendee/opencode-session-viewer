@@ -24,7 +24,7 @@ export const MessageSidebar = forwardRef<MessageSidebarHandle, MessageSidebarPro
       searchInputRef.current?.focus();
     },
   }));
-  const { session, sidebarOpen, setSidebarOpen } = useSessionStore();
+  const { session, sidebarOpen, setSidebarOpen, isLoadingMessages } = useSessionStore();
 
   const groups = useMemo(() => {
     return session ? groupMessages(session.messages) : [];
@@ -89,6 +89,7 @@ export const MessageSidebar = forwardRef<MessageSidebarHandle, MessageSidebarPro
               onChange={setSearchQuery}
               onClear={clearSearch}
               resultCount={searchResults.length}
+              isLoading={isLoadingMessages}
             />
             <JumpToDropdown
               groups={groups}

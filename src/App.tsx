@@ -6,13 +6,14 @@ import { FolderPicker } from './components/FolderPicker';
 import { SelectSessionPrompt } from './components/SelectSessionPrompt';
 import { MessageList } from './components/MessageList';
 import { KeyboardShortcutsHelp } from './components/KeyboardShortcutsHelp';
+import { SkeletonContent } from './components/SkeletonLoader';
 import { useSessionStore } from './store/sessionStore';
 import { useNavigation } from './hooks/useNavigation';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { groupMessages } from './utils/groupMessages';
 
 function App() {
-  const { fileSystem, session, sidebarOpen, setSidebarOpen } = useSessionStore();
+  const { fileSystem, session, sidebarOpen, setSidebarOpen, isLoadingSession } = useSessionStore();
   const { activeMessageId, scrollToMessage } = useNavigation();
   const messageSidebarRef = useRef<MessageSidebarHandle>(null);
 
@@ -85,7 +86,13 @@ function App() {
 
         {/* Main content */}
         <main className="flex-1 flex flex-col overflow-hidden">
-          {session ? <MessageList /> : <SelectSessionPrompt />}
+          {isLoadingSession ? (
+            <SkeletonContent />
+          ) : session ? (
+            <MessageList />
+          ) : (
+            <SelectSessionPrompt />
+          )}
         </main>
 
         {/* Right sidebar - Message Index (only when session loaded) */}
