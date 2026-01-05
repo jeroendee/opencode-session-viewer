@@ -1,8 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { SessionBrowser } from './SessionBrowser';
 import { useSessionStore, type ProjectInfo } from '../store/sessionStore';
+
+// Mock localStorage
+const localStorageMock = (() => {
+  let store: Record<string, string> = {};
+  return {
+    getItem: vi.fn((key: string) => store[key] ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      store[key] = value;
+    }),
+    removeItem: vi.fn((key: string) => {
+      delete store[key];
+    }),
+    clear: vi.fn(() => {
+      store = {};
+    }),
+  };
+})();
+
+Object.defineProperty(window, 'localStorage', {
+  value: localStorageMock,
+});
 
 // Mock the session store
 vi.mock('../store/sessionStore', async () => {
@@ -80,8 +101,24 @@ describe('SessionBrowser', () => {
     },
   ];
 
+  // Build allSessions record from projects
+  const buildAllSessions = (projects: ProjectInfo[]): Record<string, ProjectInfo['sessions'][0]['session']> => {
+    const result: Record<string, ProjectInfo['sessions'][0]['session']> = {};
+    const collect = (nodes: ProjectInfo['sessions']) => {
+      for (const node of nodes) {
+        result[node.session.id] = node.session;
+        collect(node.children);
+      }
+    };
+    for (const project of projects) {
+      collect(project.sessions);
+    }
+    return result;
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorageMock.clear();
     // Mock matchMedia for mobile detection
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
@@ -96,8 +133,10 @@ describe('SessionBrowser', () => {
         dispatchEvent: vi.fn(),
       })),
     });
+    const mockProjects = createMockProjects();
     vi.mocked(useSessionStore).mockReturnValue({
-      projects: createMockProjects(),
+      projects: mockProjects,
+      allSessions: buildAllSessions(mockProjects),
       selectedSessionId: null,
       selectSession: mockSelectSession,
       clearFolder: mockClearFolder,
@@ -338,11 +377,110 @@ describe('SessionBrowser', () => {
   });
 
   describe('search input', () => {
-    it('renders a disabled search input placeholder for Phase 4', () => {
+    it('renders an enabled search input', () => {
       render(<SessionBrowser sidebarOpen={true} />);
 
       const searchInput = screen.getByPlaceholderText('Search sessions...');
-      expect(searchInput).toBeDisabled();
+      expect(searchInput).toBeEnabled();
+    });
+
+    it('filters sessions when searching by title', async () => {
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      // Expand directory first to see sessions
+      const opencodeButton = screen.getByRole('button', { name: /Expand opencode/i });
+      fireEvent.click(opencodeButton);
+
+      // Both sessions visible initially
+      expect(screen.getByText('Implement feature X')).toBeInTheDocument();
+      expect(screen.getByText('Fix bug Y')).toBeInTheDocument();
+
+      // Type in search
+      const searchInput = screen.getByPlaceholderText('Search sessions...');
+      fireEvent.change(searchInput, { target: { value: 'feature' } });
+
+      // Wait for debounced search results
+      await waitFor(() => {
+        expect(screen.getByText('Implement feature X')).toBeInTheDocument();
+      });
+
+      // 'Fix bug Y' should be filtered out
+      await waitFor(() => {
+        expect(screen.queryByText('Fix bug Y')).not.toBeInTheDocument();
+      });
+    });
+
+    it('shows clear button when searching', async () => {
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      const searchInput = screen.getByPlaceholderText('Search sessions...');
+      
+      // No clear button initially
+      expect(screen.queryByRole('button', { name: 'Clear search' })).not.toBeInTheDocument();
+
+      // Type in search
+      fireEvent.change(searchInput, { target: { value: 'test' } });
+
+      // Clear button appears
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Clear search' })).toBeInTheDocument();
+      });
+
+      // Click clear
+      fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+
+      // Input cleared
+      expect(searchInput).toHaveValue('');
+    });
+
+    it('shows no matching sessions message when search has no results', async () => {
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      const searchInput = screen.getByPlaceholderText('Search sessions...');
+      fireEvent.change(searchInput, { target: { value: 'nonexistent query xyz123' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('No matching sessions')).toBeInTheDocument();
+      });
+    });
+
+    it('auto-expands groups when searching', async () => {
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      // Initially groups are collapsed, session not visible
+      expect(screen.queryByText('Implement feature X')).not.toBeInTheDocument();
+
+      // Search for a session
+      const searchInput = screen.getByPlaceholderText('Search sessions...');
+      fireEvent.change(searchInput, { target: { value: 'feature' } });
+
+      // Session becomes visible (group auto-expanded)
+      await waitFor(() => {
+        expect(screen.getByText('Implement feature X')).toBeInTheDocument();
+      });
+    });
+
+    it('works with date grouping mode', async () => {
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      // Switch to date grouping
+      const dateButton = screen.getByRole('button', { name: 'Date' });
+      fireEvent.click(dateButton);
+
+      // Search for a session
+      const searchInput = screen.getByPlaceholderText('Search sessions...');
+      fireEvent.change(searchInput, { target: { value: 'feature' } });
+
+      // Session becomes visible in date view
+      await waitFor(() => {
+        expect(screen.getByText('Implement feature X')).toBeInTheDocument();
+      });
+
+      // Clear search and verify other sessions appear
+      fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+
+      // With search cleared, we should see the timeline header
+      expect(screen.getByText('Timeline')).toBeInTheDocument();
     });
   });
 

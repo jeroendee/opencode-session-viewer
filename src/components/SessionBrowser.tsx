@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Search, ChevronRight, ChevronDown, FolderOpen, Calendar, ChevronsUpDown } from 'lucide-react';
+import { Search, ChevronRight, ChevronDown, FolderOpen, Calendar, ChevronsUpDown, X } from 'lucide-react';
 import { useSessionStore, type DirectoryGroup, type YearGroup, type MonthGroup, type DayGroup } from '../store/sessionStore';
 import { groupSessionsByDirectory, groupSessionsByDate } from '../lib/sessionLoader';
 import { useSidebarPreferences, type GroupingMode } from '../hooks/useSidebarPreferences';
+import { useSessionSearch } from '../hooks/useSessionSearch';
 import { LoadingSpinner } from './LoadingSpinner';
 import type { SessionInfo } from '../types/session';
 
@@ -394,10 +395,19 @@ function GroupingModeSelector({
  * - Preferences persisted to localStorage
  */
 export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserProps) {
-  const { projects, selectedSessionId, selectSession, clearFolder, isLoadingFolder } = useSessionStore();
+  const { projects, selectedSessionId, selectSession, clearFolder, isLoadingFolder, allSessions } = useSessionStore();
   const { width, groupingMode, setWidth, setGroupingMode, minWidth, maxWidth } = useSidebarPreferences();
   const [currentWidth, setCurrentWidth] = useState(width);
   
+  // Session search
+  const { query, setQuery, results, clearSearch, isSearching } = useSessionSearch(allSessions, { includeMessages: true });
+  
+  // Set of matching session IDs for filtering
+  const matchingSessionIds = useMemo(() => {
+    if (!isSearching) return null;
+    return new Set(results.map((r) => r.sessionId));
+  }, [results, isSearching]);
+
   // Group sessions by directory
   const directoryGroups = useMemo(() => {
     return groupSessionsByDirectory(projects);
@@ -407,6 +417,52 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
   const dateGroups = useMemo(() => {
     return groupSessionsByDate(projects);
   }, [projects]);
+  
+  // Filtered groups when searching
+  const filteredDirectoryGroups = useMemo(() => {
+    if (!matchingSessionIds) return directoryGroups;
+    return directoryGroups
+      .map((group) => ({
+        ...group,
+        sessions: group.sessions.filter((s) => matchingSessionIds.has(s.id)),
+      }))
+      .filter((group) => group.sessions.length > 0);
+  }, [directoryGroups, matchingSessionIds]);
+
+  const filteredDateGroups = useMemo(() => {
+    if (!matchingSessionIds) return dateGroups;
+    return dateGroups
+      .map((yearGroup) => ({
+        ...yearGroup,
+        months: yearGroup.months
+          .map((monthGroup) => ({
+            ...monthGroup,
+            days: monthGroup.days
+              .map((dayGroup) => ({
+                ...dayGroup,
+                sessions: dayGroup.sessions.filter((s) => matchingSessionIds.has(s.id)),
+              }))
+              .filter((dayGroup) => dayGroup.sessions.length > 0),
+          }))
+          .filter((monthGroup) => monthGroup.days.length > 0),
+      }))
+      .filter((yearGroup) => yearGroup.months.length > 0);
+  }, [dateGroups, matchingSessionIds]);
+
+  // Pre-compute all month/day keys for auto-expanding during search
+  const { allMonthKeys, allDayKeys } = useMemo(() => {
+    const months = new Set<string>();
+    const days = new Set<string>();
+    for (const year of filteredDateGroups) {
+      for (const month of year.months) {
+        months.add(`${year.year}-${month.month}`);
+        for (const day of month.days) {
+          days.add(`${month.month}-${day.day}`);
+        }
+      }
+    }
+    return { allMonthKeys: months, allDayKeys: days };
+  }, [filteredDateGroups]);
 
   // Expanded state for directory groups - collapsed by default
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => new Set());
@@ -572,10 +628,20 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
           <input
             type="text"
             placeholder="Search sessions..."
-            className="w-full pl-9 pr-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent focus:border-blue-500 focus:bg-white dark:focus:bg-gray-800 rounded-lg outline-none transition-colors text-gray-800 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full pl-9 pr-8 py-2 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent focus:border-blue-500 focus:bg-white dark:focus:bg-gray-800 rounded-lg outline-none transition-colors text-gray-800 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400"
             aria-label="Search sessions"
-            disabled
           />
+          {isSearching && (
+            <button
+              onClick={clearSearch}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded transition-colors"
+              aria-label="Clear search"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
         <GroupingModeSelector mode={groupingMode} onChange={setGroupingMode} />
       </div>
@@ -600,15 +666,17 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
             <LoadingSpinner label="Loading sessions..." />
           </div>
         ) : groupingMode === 'directory' ? (
-          directoryGroups.length === 0 ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400">No sessions loaded</p>
+          filteredDirectoryGroups.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {isSearching ? 'No matching sessions' : 'No sessions loaded'}
+            </p>
           ) : (
             <div className="space-y-1">
-              {directoryGroups.map((group) => (
+              {filteredDirectoryGroups.map((group) => (
                 <DirectoryGroupComponent
                   key={group.directory}
                   group={group}
-                  isExpanded={expandedDirectories.has(group.directory)}
+                  isExpanded={isSearching || expandedDirectories.has(group.directory)}
                   onToggle={() => handleToggleDirectory(group.directory)}
                   selectedSessionId={selectedSessionId}
                   onSelectSession={handleSelectSession}
@@ -616,19 +684,21 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
               ))}
             </div>
           )
-        ) : dateGroups.length === 0 ? (
-          <p className="text-sm text-gray-500 dark:text-gray-400">No sessions loaded</p>
+        ) : filteredDateGroups.length === 0 ? (
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {isSearching ? 'No matching sessions' : 'No sessions loaded'}
+          </p>
         ) : (
           <div className="space-y-1">
-            {dateGroups.map((yearGroup) => (
+            {filteredDateGroups.map((yearGroup) => (
               <YearGroupComponent
                 key={yearGroup.year}
                 group={yearGroup}
-                isExpanded={expandedYears.has(yearGroup.year)}
+                isExpanded={isSearching || expandedYears.has(yearGroup.year)}
                 onToggle={() => handleToggleYear(yearGroup.year)}
-                expandedMonths={expandedMonths}
+                expandedMonths={isSearching ? allMonthKeys : expandedMonths}
                 onToggleMonth={handleToggleMonth}
-                expandedDays={expandedDays}
+                expandedDays={isSearching ? allDayKeys : expandedDays}
                 onToggleDay={handleToggleDay}
                 selectedSessionId={selectedSessionId}
                 onSelectSession={handleSelectSession}
