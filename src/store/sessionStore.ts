@@ -30,6 +30,33 @@ export interface DirectoryGroup {
   latestUpdate: number; // Most recent update time (for sorting groups)
 }
 
+/**
+ * Represents a day containing sessions.
+ */
+export interface DayGroup {
+  day: number; // Day of month (1-31)
+  label: string; // e.g., "15" or "Today"
+  sessions: SessionInfo[];
+}
+
+/**
+ * Represents a month containing days.
+ */
+export interface MonthGroup {
+  month: number; // Month (0-11)
+  label: string; // e.g., "January"
+  days: DayGroup[];
+}
+
+/**
+ * Represents a year containing months.
+ */
+export interface YearGroup {
+  year: number;
+  label: string; // e.g., "2025"
+  months: MonthGroup[];
+}
+
 interface SessionState {
   // Session data (single session - existing)
   session: Session | null;
@@ -134,8 +161,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   isLoadingMessages: false,
   loadError: null,
 
-  // UI state
-  sidebarOpen: true,
+  // UI state - sidebar starts collapsed
+  sidebarOpen: false,
 
   // Load session from a File object
   loadSession: async (file: File) => {

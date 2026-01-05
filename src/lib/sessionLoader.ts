@@ -615,3 +615,99 @@ export function groupSessionsByDirectory(
   
   return groups;
 }
+
+/**
+ * Groups sessions by date in a hierarchical tree: year -> month -> day.
+ * Sessions are sorted by update time descending (newest first) at all levels.
+ * 
+ * @param projects - Array of ProjectInfo from the store
+ * @returns Array of YearGroup sorted by year descending (newest first)
+ */
+export function groupSessionsByDate(
+  projects: { sessions: { session: SessionInfo; children: unknown[] }[] }[]
+): { year: number; label: string; months: { month: number; label: string; days: { day: number; label: string; sessions: SessionInfo[] }[] }[] }[] {
+  // Flatten all sessions from all projects
+  const allSessions: SessionInfo[] = [];
+  for (const project of projects) {
+    allSessions.push(...flattenSessionNodes(project.sessions));
+  }
+  
+  // Sort all sessions by update time descending
+  allSessions.sort((a, b) => b.time.updated - a.time.updated);
+  
+  // Group by year -> month -> day
+  const yearMap = new Map<number, Map<number, Map<number, SessionInfo[]>>>();
+  
+  for (const session of allSessions) {
+    const date = new Date(session.time.updated);
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const day = date.getDate();
+    
+    if (!yearMap.has(year)) {
+      yearMap.set(year, new Map());
+    }
+    const monthMap = yearMap.get(year)!;
+    
+    if (!monthMap.has(month)) {
+      monthMap.set(month, new Map());
+    }
+    const dayMap = monthMap.get(month)!;
+    
+    if (!dayMap.has(day)) {
+      dayMap.set(day, []);
+    }
+    dayMap.get(day)!.push(session);
+  }
+  
+  // Month names for labels
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  
+  // Convert to array structure
+  const years: { year: number; label: string; months: { month: number; label: string; days: { day: number; label: string; sessions: SessionInfo[] }[] }[] }[] = [];
+  
+  // Sort years descending
+  const sortedYears = Array.from(yearMap.keys()).sort((a, b) => b - a);
+  
+  for (const year of sortedYears) {
+    const monthMap = yearMap.get(year)!;
+    const months: { month: number; label: string; days: { day: number; label: string; sessions: SessionInfo[] }[] }[] = [];
+    
+    // Sort months descending
+    const sortedMonths = Array.from(monthMap.keys()).sort((a, b) => b - a);
+    
+    for (const month of sortedMonths) {
+      const dayMap = monthMap.get(month)!;
+      const days: { day: number; label: string; sessions: SessionInfo[] }[] = [];
+      
+      // Sort days descending
+      const sortedDays = Array.from(dayMap.keys()).sort((a, b) => b - a);
+      
+      for (const day of sortedDays) {
+        const sessions = dayMap.get(day)!;
+        days.push({
+          day,
+          label: String(day),
+          sessions,
+        });
+      }
+      
+      months.push({
+        month,
+        label: monthNames[month],
+        days,
+      });
+    }
+    
+    years.push({
+      year,
+      label: String(year),
+      months,
+    });
+  }
+  
+  return years;
+}

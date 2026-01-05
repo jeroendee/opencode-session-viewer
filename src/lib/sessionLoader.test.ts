@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { loadAllSessions, loadSessionContent, loadUserMessagesForSession, groupSessionsByDirectory } from './sessionLoader';
+import { loadAllSessions, loadSessionContent, loadUserMessagesForSession, groupSessionsByDirectory, groupSessionsByDate } from './sessionLoader';
 import { StorageError } from './errors';
 import type { VirtualFileSystem } from './fileSystem';
 import type { SessionInfo, MessageInfo, Part } from '../types/session';
@@ -1430,5 +1430,227 @@ describe('groupSessionsByDirectory', () => {
     const result = groupSessionsByDirectory(projects);
 
     expect(result[0].latestUpdate).toBe(5000);
+  });
+});
+
+describe('groupSessionsByDate', () => {
+  // Helper to create a minimal valid SessionInfo for testing
+  function makeSession(overrides: {
+    id: string;
+    projectID: string;
+    directory: string;
+    title: string;
+    time: { created: number; updated: number };
+  }): SessionInfo {
+    return {
+      version: '1.0',
+      ...overrides,
+    };
+  }
+
+  it('groups sessions by year, month, and day', () => {
+    // Create sessions on different dates
+    const jan15_2025 = new Date(2025, 0, 15, 10, 0, 0).getTime();
+    const jan16_2025 = new Date(2025, 0, 16, 10, 0, 0).getTime();
+    const feb10_2025 = new Date(2025, 1, 10, 10, 0, 0).getTime();
+    
+    const projects = [
+      {
+        id: 'proj-1',
+        path: '/path',
+        sessions: [
+          {
+            session: makeSession({
+              id: 'sess-1',
+              projectID: 'proj-1',
+              directory: '/app',
+              title: 'Session 1',
+              time: { created: jan15_2025, updated: jan15_2025 },
+            }),
+            children: [],
+          },
+          {
+            session: makeSession({
+              id: 'sess-2',
+              projectID: 'proj-1',
+              directory: '/app',
+              title: 'Session 2',
+              time: { created: jan16_2025, updated: jan16_2025 },
+            }),
+            children: [],
+          },
+          {
+            session: makeSession({
+              id: 'sess-3',
+              projectID: 'proj-1',
+              directory: '/app',
+              title: 'Session 3',
+              time: { created: feb10_2025, updated: feb10_2025 },
+            }),
+            children: [],
+          },
+        ],
+      },
+    ];
+
+    const result = groupSessionsByDate(projects);
+
+    // Should have one year (2025)
+    expect(result).toHaveLength(1);
+    expect(result[0].year).toBe(2025);
+    expect(result[0].label).toBe('2025');
+    
+    // Should have two months (February and January, sorted descending)
+    expect(result[0].months).toHaveLength(2);
+    expect(result[0].months[0].month).toBe(1); // February (index 1)
+    expect(result[0].months[0].label).toBe('February');
+    expect(result[0].months[1].month).toBe(0); // January (index 0)
+    expect(result[0].months[1].label).toBe('January');
+    
+    // January should have 2 days (16 and 15, sorted descending)
+    expect(result[0].months[1].days).toHaveLength(2);
+    expect(result[0].months[1].days[0].day).toBe(16);
+    expect(result[0].months[1].days[1].day).toBe(15);
+  });
+
+  it('sorts years, months, and days in descending order (newest first)', () => {
+    const dec2024 = new Date(2024, 11, 25, 10, 0, 0).getTime();
+    const jan2025 = new Date(2025, 0, 5, 10, 0, 0).getTime();
+    
+    const projects = [
+      {
+        id: 'proj-1',
+        path: '/path',
+        sessions: [
+          {
+            session: makeSession({
+              id: 'old-sess',
+              projectID: 'proj-1',
+              directory: '/app',
+              title: 'Old',
+              time: { created: dec2024, updated: dec2024 },
+            }),
+            children: [],
+          },
+          {
+            session: makeSession({
+              id: 'new-sess',
+              projectID: 'proj-1',
+              directory: '/app',
+              title: 'New',
+              time: { created: jan2025, updated: jan2025 },
+            }),
+            children: [],
+          },
+        ],
+      },
+    ];
+
+    const result = groupSessionsByDate(projects);
+
+    // 2025 should come before 2024
+    expect(result[0].year).toBe(2025);
+    expect(result[1].year).toBe(2024);
+  });
+
+  it('sorts sessions within a day by update time descending', () => {
+    const day = new Date(2025, 0, 15);
+    const morning = new Date(day.setHours(9, 0, 0)).getTime();
+    const afternoon = new Date(day.setHours(14, 0, 0)).getTime();
+    const evening = new Date(day.setHours(20, 0, 0)).getTime();
+    
+    const projects = [
+      {
+        id: 'proj-1',
+        path: '/path',
+        sessions: [
+          {
+            session: makeSession({
+              id: 'morning-sess',
+              projectID: 'proj-1',
+              directory: '/app',
+              title: 'Morning',
+              time: { created: morning, updated: morning },
+            }),
+            children: [],
+          },
+          {
+            session: makeSession({
+              id: 'evening-sess',
+              projectID: 'proj-1',
+              directory: '/app',
+              title: 'Evening',
+              time: { created: evening, updated: evening },
+            }),
+            children: [],
+          },
+          {
+            session: makeSession({
+              id: 'afternoon-sess',
+              projectID: 'proj-1',
+              directory: '/app',
+              title: 'Afternoon',
+              time: { created: afternoon, updated: afternoon },
+            }),
+            children: [],
+          },
+        ],
+      },
+    ];
+
+    const result = groupSessionsByDate(projects);
+
+    // All sessions on same day, should be sorted by time descending
+    const daySessions = result[0].months[0].days[0].sessions;
+    expect(daySessions.map((s: SessionInfo) => s.id)).toEqual([
+      'evening-sess',
+      'afternoon-sess', 
+      'morning-sess',
+    ]);
+  });
+
+  it('returns empty array for empty projects', () => {
+    const result = groupSessionsByDate([]);
+    expect(result).toEqual([]);
+  });
+
+  it('flattens nested child sessions', () => {
+    const timestamp = new Date(2025, 0, 15, 10, 0, 0).getTime();
+    
+    const projects = [
+      {
+        id: 'proj-1',
+        path: '/path',
+        sessions: [
+          {
+            session: makeSession({
+              id: 'parent-sess',
+              projectID: 'proj-1',
+              directory: '/app',
+              title: 'Parent',
+              time: { created: timestamp, updated: timestamp },
+            }),
+            children: [
+              {
+                session: makeSession({
+                  id: 'child-sess',
+                  projectID: 'proj-1',
+                  directory: '/app',
+                  title: 'Child',
+                  time: { created: timestamp + 1000, updated: timestamp + 1000 },
+                }),
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const result = groupSessionsByDate(projects);
+
+    // Both parent and child should be in the same day
+    const daySessions = result[0].months[0].days[0].sessions;
+    expect(daySessions).toHaveLength(2);
   });
 });
