@@ -7,6 +7,8 @@ import { formatDurationCompact } from '../../utils/formatters';
 import { useSessionNavigation } from '../../contexts/SessionNavigationContext';
 import { findSpawnedSession } from '../../utils/subtaskMatcher';
 import { EmbeddedSession } from './EmbeddedSession';
+import { useSearchContextSafe } from '../../contexts/SearchContext';
+import { HighlightedText } from '../../utils/highlightText';
 
 interface ToolPartProps {
   part: ToolPartType;
@@ -56,6 +58,7 @@ function getTaskParams(input: unknown): { agent: string; description: string } |
 export function ToolPart({ part }: ToolPartProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const sessionNav = useSessionNavigation();
+  const { searchQuery } = useSearchContextSafe();
 
   const { state } = part;
   const title = isToolCompleted(state) ? state.title : undefined;
@@ -130,7 +133,7 @@ export function ToolPart({ part }: ToolPartProps) {
         {/* Title (if available) */}
         {title && (
           <span className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-[300px]">
-            {title}
+            <HighlightedText text={title} query={searchQuery} />
           </span>
         )}
 
@@ -158,7 +161,7 @@ export function ToolPart({ part }: ToolPartProps) {
                 Output
               </div>
               <pre className="bg-gray-100 dark:bg-gray-700 p-3 rounded overflow-x-auto text-xs font-mono text-gray-800 dark:text-gray-200 max-h-64 overflow-y-auto whitespace-pre-wrap">
-                {state.output}
+                <HighlightedText text={state.output} query={searchQuery} />
               </pre>
             </div>
           )}
@@ -170,7 +173,7 @@ export function ToolPart({ part }: ToolPartProps) {
                 Error
               </div>
               <pre className="bg-red-50 dark:bg-red-900/20 p-3 rounded overflow-x-auto text-xs font-mono text-red-700 dark:text-red-300 max-h-48 overflow-y-auto whitespace-pre-wrap">
-                {state.error}
+                <HighlightedText text={state.error} query={searchQuery} />
               </pre>
             </div>
           )}

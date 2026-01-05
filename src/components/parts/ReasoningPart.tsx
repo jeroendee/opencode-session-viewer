@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Brain, ChevronDown, ChevronRight } from 'lucide-react';
 import type { ReasoningPart as ReasoningPartType } from '../../types/session';
+import { useSearchContextSafe } from '../../contexts/SearchContext';
+import { HighlightedText } from '../../utils/highlightText';
 
 interface ReasoningPartProps {
   part: ReasoningPartType;
@@ -9,6 +11,7 @@ interface ReasoningPartProps {
 
 export function ReasoningPart({ part, defaultExpanded = false }: ReasoningPartProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const { searchQuery } = useSearchContextSafe();
 
   // Get a preview of the reasoning text
   const previewLength = 50;
@@ -54,7 +57,7 @@ export function ReasoningPart({ part, defaultExpanded = false }: ReasoningPartPr
       {isExpanded && (
         <div className="mt-2 ml-6 p-4 bg-purple-50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-800 rounded-lg">
           <pre className="text-sm text-purple-700 dark:text-purple-300 italic whitespace-pre-wrap font-sans leading-relaxed">
-            {part.text}
+            <HighlightedText text={part.text} query={searchQuery} />
           </pre>
         </div>
       )}
