@@ -19,6 +19,7 @@ export interface SessionInfo {
     files: number;
     diffs?: string[];
   };
+  userMessages?: string[]; // Extracted text from user messages, loaded on demand
 }
 
 // Message types

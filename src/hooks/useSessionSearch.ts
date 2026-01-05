@@ -2,12 +2,20 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { SessionInfo } from '../types/session';
 
 /**
+ * Options for controlling search behavior.
+ */
+export interface SearchOptions {
+  /** When true, also search through user message content */
+  includeMessages?: boolean;
+}
+
+/**
  * A search result representing a match in a session.
  */
 export interface SearchResult {
   sessionId: string;
   session: SessionInfo;
-  matchType: 'title' | 'summary' | 'date';
+  matchType: 'title' | 'summary' | 'date' | 'message';
   matchText: string; // The text that matched
   preview: string; // Snippet with context
 }
@@ -148,7 +156,8 @@ function formatDatePreview(timestamp: number): string {
  */
 export function searchSessions(
   query: string,
-  sessions: Map<string, SessionInfo> | Record<string, SessionInfo>
+  sessions: Map<string, SessionInfo> | Record<string, SessionInfo>,
+  options: SearchOptions = {}
 ): SearchResult[] {
   const trimmedQuery = query.trim();
   if (!trimmedQuery) {
@@ -157,6 +166,7 @@ export function searchSessions(
 
   const results: SearchResult[] = [];
   const lowerQuery = trimmedQuery.toLowerCase();
+  const { includeMessages = false } = options;
 
   // Convert Record to iterable entries if needed
   const sessionEntries = sessions instanceof Map
@@ -197,6 +207,7 @@ export function searchSessions(
     }
 
     // Summary search - check diffs array if available
+    let foundInSummary = false;
     if (session.summary?.diffs) {
       for (const diff of session.summary.diffs) {
         const lowerDiff = diff.toLowerCase();
@@ -209,11 +220,33 @@ export function searchSessions(
             matchText: diff.substring(diffIndex, diffIndex + trimmedQuery.length),
             preview: getContext(diff, diffIndex, trimmedQuery),
           });
+          foundInSummary = true;
           break; // Found in summary, move to next session
         }
       }
     }
 
+    if (foundInSummary) {
+      continue;
+    }
+
+    // Message search - only if includeMessages is enabled and session has userMessages
+    if (includeMessages && session.userMessages) {
+      for (const messageText of session.userMessages) {
+        const lowerMessage = messageText.toLowerCase();
+        const messageIndex = lowerMessage.indexOf(lowerQuery);
+        if (messageIndex !== -1) {
+          results.push({
+            sessionId,
+            session,
+            matchType: 'message',
+            matchText: messageText.substring(messageIndex, messageIndex + trimmedQuery.length),
+            preview: getContext(messageText, messageIndex, trimmedQuery),
+          });
+          break; // Found in message, move to next session
+        }
+      }
+    }
   }
 
   // Sort results by recency (most recent first)
@@ -229,19 +262,23 @@ export const DEBOUNCE_MS = 150;
  * Hook for searching across multiple sessions with debouncing.
  */
 export function useSessionSearch(
-  sessions: Map<string, SessionInfo> | Record<string, SessionInfo>
+  sessions: Map<string, SessionInfo> | Record<string, SessionInfo>,
+  options: SearchOptions = {}
 ) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
 
+  // Extract primitive to avoid re-triggers when caller passes inline object
+  const includeMessages = options.includeMessages ?? false;
+
   // Debounced search
   useEffect(() => {
     const timer = setTimeout(() => {
-      setResults(searchSessions(query, sessions));
+      setResults(searchSessions(query, sessions, { includeMessages }));
     }, DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [query, sessions]);
+  }, [query, sessions, includeMessages]);
 
   // Clear search helper
   const clearSearch = useCallback(() => {

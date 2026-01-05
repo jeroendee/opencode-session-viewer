@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Session, SessionInfo } from '../types/session';
 import type { VirtualFileSystem } from '../lib/fileSystem';
-import { loadSessionContent } from '../lib/sessionLoader';
+import { loadSessionContent, loadUserMessagesForSession } from '../lib/sessionLoader';
 
 /**
  * Represents a session with its child sessions (for branched conversations).
@@ -26,7 +26,7 @@ interface SessionState {
   isLoading: boolean;
   error: string | null;
 
-  // Multi-session state (new)
+  // Multi-session state
   fileSystem: VirtualFileSystem | null;
   projects: ProjectInfo[];
   sessionTree: SessionNode[];
@@ -34,6 +34,7 @@ interface SessionState {
   selectedSessionId: string | null;
   isLoadingFolder: boolean;
   isLoadingSession: boolean;
+  isLoadingMessages: boolean;
   loadError: string | null;
 
   // UI state
@@ -49,10 +50,11 @@ interface SessionState {
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
 
-  // Actions (new - multi-session)
+  // Multi-session actions
   setFileSystem: (fs: VirtualFileSystem) => void;
   setProjects: (projects: ProjectInfo[]) => void;
   selectSession: (sessionId: string) => Promise<void>;
+  loadUserMessages: () => Promise<void>;
   clearFolder: () => void;
 }
 
@@ -110,7 +112,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   isLoading: false,
   error: null,
 
-  // Initial state (multi-session - new)
+  // Multi-session state
   fileSystem: null,
   projects: [],
   sessionTree: [],
@@ -118,6 +120,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   selectedSessionId: null,
   isLoadingFolder: false,
   isLoadingSession: false,
+  isLoadingMessages: false,
   loadError: null,
 
   // UI state
@@ -202,7 +205,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set((state) => ({ sidebarOpen: !state.sidebarOpen }));
   },
 
-  // Multi-session actions (new)
+  // Multi-session actions
   setFileSystem: (fs: VirtualFileSystem) => {
     set({ fileSystem: fs });
   },
@@ -271,6 +274,58 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
+  loadUserMessages: async () => {
+    const state = get();
+    if (!state.fileSystem) {
+      return;
+    }
+
+    set({ isLoadingMessages: true });
+
+    try {
+      const updatedSessions: Record<string, SessionInfo> = {};
+
+      // Load user messages for all sessions in parallel
+      const sessionEntries = Object.entries(state.allSessions);
+      const results = await Promise.all(
+        sessionEntries.map(async ([sessionId, sessionInfo]) => {
+          const userMessages = await loadUserMessagesForSession(sessionId, state.fileSystem!);
+          return { sessionId, sessionInfo, userMessages };
+        })
+      );
+
+      // Update sessions with loaded user messages
+      for (const { sessionId, sessionInfo, userMessages } of results) {
+        updatedSessions[sessionId] = {
+          ...sessionInfo,
+          userMessages,
+        };
+      }
+
+      // Helper to update SessionNode tree with new session data
+      const updateSessionTree = (nodes: SessionNode[]): SessionNode[] => {
+        return nodes.map((node) => ({
+          session: updatedSessions[node.session.id] ?? node.session,
+          children: updateSessionTree(node.children),
+        }));
+      };
+
+      // Update allSessions, sessionTree, and projects to keep them all in sync
+      set({
+        allSessions: updatedSessions,
+        sessionTree: updateSessionTree(state.sessionTree),
+        projects: state.projects.map((project) => ({
+          ...project,
+          sessions: updateSessionTree(project.sessions),
+        })),
+        isLoadingMessages: false,
+      });
+    } catch (err) {
+      console.warn('Failed to load user messages:', err);
+      set({ isLoadingMessages: false });
+    }
+  },
+
   clearFolder: () => {
     set({
       fileSystem: null,
@@ -281,6 +336,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       session: null,
       isLoadingFolder: false,
       isLoadingSession: false,
+      isLoadingMessages: false,
       loadError: null,
     });
   },

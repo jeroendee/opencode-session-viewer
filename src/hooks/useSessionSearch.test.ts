@@ -12,7 +12,8 @@ const createMockSession = (
   id: string,
   title: string,
   createdTimestamp?: number,
-  summary?: { additions: number; deletions: number; files: number; diffs?: string[] }
+  summary?: { additions: number; deletions: number; files: number; diffs?: string[] },
+  userMessages?: string[]
 ): SessionInfo => ({
   id,
   version: '1.0.0',
@@ -24,6 +25,7 @@ const createMockSession = (
     updated: createdTimestamp ?? Date.now(),
   },
   summary,
+  userMessages,
 });
 
 describe('parseDateQuery', () => {
@@ -271,6 +273,145 @@ describe('searchSessions', () => {
 
       expect(results).toHaveLength(1);
       expect(results[0].matchType).toBe('title');
+    });
+  });
+
+  describe('message search', () => {
+    it('does not search messages by default', () => {
+      const sessions: Record<string, SessionInfo> = {
+        'session-1': createMockSession(
+          'session-1',
+          'Some title',
+          undefined,
+          undefined,
+          ['Help me fix the authentication bug']
+        ),
+      };
+
+      const results = searchSessions('authentication', sessions);
+
+      expect(results).toHaveLength(0);
+    });
+
+    it('finds sessions by message content when includeMessages is true', () => {
+      const sessions: Record<string, SessionInfo> = {
+        'session-1': createMockSession(
+          'session-1',
+          'Some title',
+          undefined,
+          undefined,
+          ['Help me fix the authentication bug']
+        ),
+      };
+
+      const results = searchSessions('authentication', sessions, { includeMessages: true });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].sessionId).toBe('session-1');
+      expect(results[0].matchType).toBe('message');
+    });
+
+    it('is case-insensitive', () => {
+      const sessions: Record<string, SessionInfo> = {
+        'session-1': createMockSession(
+          'session-1',
+          'Some title',
+          undefined,
+          undefined,
+          ['Help me fix the AUTHENTICATION bug']
+        ),
+      };
+
+      const results = searchSessions('authentication', sessions, { includeMessages: true });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].matchType).toBe('message');
+    });
+
+    it('searches through multiple messages', () => {
+      const sessions: Record<string, SessionInfo> = {
+        'session-1': createMockSession(
+          'session-1',
+          'Some title',
+          undefined,
+          undefined,
+          ['First message', 'Second message with special keyword']
+        ),
+      };
+
+      const results = searchSessions('special keyword', sessions, { includeMessages: true });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].matchType).toBe('message');
+    });
+
+    it('prefers title match over message match', () => {
+      const sessions: Record<string, SessionInfo> = {
+        'session-1': createMockSession(
+          'session-1',
+          'Fix authentication issue',
+          undefined,
+          undefined,
+          ['Also mentions authentication']
+        ),
+      };
+
+      const results = searchSessions('authentication', sessions, { includeMessages: true });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].matchType).toBe('title');
+    });
+
+    it('prefers summary match over message match', () => {
+      const sessions: Record<string, SessionInfo> = {
+        'session-1': createMockSession(
+          'session-1',
+          'Some title',
+          undefined,
+          { additions: 10, deletions: 5, files: 1, diffs: ['Fixed authentication'] },
+          ['Also mentions authentication in message']
+        ),
+      };
+
+      const results = searchSessions('authentication', sessions, { includeMessages: true });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].matchType).toBe('summary');
+    });
+
+    it('ignores sessions without userMessages when includeMessages is true', () => {
+      const sessions: Record<string, SessionInfo> = {
+        'session-1': createMockSession('session-1', 'Some title'),
+        'session-2': createMockSession(
+          'session-2',
+          'Another title',
+          undefined,
+          undefined,
+          ['Has authentication content']
+        ),
+      };
+
+      const results = searchSessions('authentication', sessions, { includeMessages: true });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].sessionId).toBe('session-2');
+    });
+
+    it('provides context in preview', () => {
+      const sessions: Record<string, SessionInfo> = {
+        'session-1': createMockSession(
+          'session-1',
+          'Some title',
+          undefined,
+          undefined,
+          ['I need help fixing the authentication bug in the login form']
+        ),
+      };
+
+      const results = searchSessions('authentication', sessions, { includeMessages: true });
+
+      expect(results[0].preview).toContain('authentication');
+      expect(results[0].matchText).toBe('authentication');
     });
   });
 

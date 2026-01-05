@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { loadAllSessions, loadSessionContent } from './sessionLoader';
+import { loadAllSessions, loadSessionContent, loadUserMessagesForSession } from './sessionLoader';
 import type { VirtualFileSystem } from './fileSystem';
 import type { SessionInfo, MessageInfo, Part } from '../types/session';
 
@@ -873,5 +873,182 @@ describe('loadSessionContent', () => {
     // Second message (assistant)
     expect(session.messages[1].info.id).toBe('msg-2');
     expect(session.messages[1].parts).toHaveLength(2);
+  });
+});
+
+describe('loadUserMessagesForSession', () => {
+  it('returns empty array when no messages directory exists', async () => {
+    const fs = createMockFileSystem({});
+
+    const result = await loadUserMessagesForSession('sess-1', fs);
+
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty array when session has no messages', async () => {
+    const fs = createMockFileSystem({
+      'message/sess-1/placeholder': '', // Directory exists but no .json files
+    });
+
+    const result = await loadUserMessagesForSession('sess-1', fs);
+
+    expect(result).toEqual([]);
+  });
+
+  it('extracts text from single user message with one text part', async () => {
+    const userMsgInfo = createMockMessageInfo('msg-1', 'sess-1', 'user', 1000);
+    const textPart = createMockTextPart('part-1', 'sess-1', 'msg-1', 'Hello, how are you?');
+
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(userMsgInfo),
+      'part/msg-1/part-1.json': JSON.stringify(textPart),
+    });
+
+    const result = await loadUserMessagesForSession('sess-1', fs);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe('Hello, how are you?');
+  });
+
+  it('joins multiple text parts from a single user message', async () => {
+    const userMsgInfo = createMockMessageInfo('msg-1', 'sess-1', 'user', 1000);
+    const textPart1 = createMockTextPart('part-1', 'sess-1', 'msg-1', 'First part');
+    const textPart2 = createMockTextPart('part-2', 'sess-1', 'msg-1', 'Second part');
+
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(userMsgInfo),
+      'part/msg-1/part-1.json': JSON.stringify(textPart1),
+      'part/msg-1/part-2.json': JSON.stringify(textPart2),
+    });
+
+    const result = await loadUserMessagesForSession('sess-1', fs);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe('First part Second part');
+  });
+
+  it('extracts text from multiple user messages', async () => {
+    const userMsg1 = createMockMessageInfo('msg-1', 'sess-1', 'user', 1000);
+    const userMsg2 = createMockMessageInfo('msg-2', 'sess-1', 'user', 2000);
+    const textPart1 = createMockTextPart('part-1', 'sess-1', 'msg-1', 'First message');
+    const textPart2 = createMockTextPart('part-2', 'sess-1', 'msg-2', 'Second message');
+
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(userMsg1),
+      'message/sess-1/msg-2.json': JSON.stringify(userMsg2),
+      'part/msg-1/part-1.json': JSON.stringify(textPart1),
+      'part/msg-2/part-2.json': JSON.stringify(textPart2),
+    });
+
+    const result = await loadUserMessagesForSession('sess-1', fs);
+
+    expect(result).toHaveLength(2);
+    expect(result).toContain('First message');
+    expect(result).toContain('Second message');
+  });
+
+  it('ignores assistant messages', async () => {
+    const userMsgInfo = createMockMessageInfo('msg-1', 'sess-1', 'user', 1000);
+    const assistantMsgInfo = createMockMessageInfo('msg-2', 'sess-1', 'assistant', 2000);
+    const userTextPart = createMockTextPart('part-1', 'sess-1', 'msg-1', 'User message');
+    const assistantTextPart = createMockTextPart('part-2', 'sess-1', 'msg-2', 'Assistant response');
+
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(userMsgInfo),
+      'message/sess-1/msg-2.json': JSON.stringify(assistantMsgInfo),
+      'part/msg-1/part-1.json': JSON.stringify(userTextPart),
+      'part/msg-2/part-2.json': JSON.stringify(assistantTextPart),
+    });
+
+    const result = await loadUserMessagesForSession('sess-1', fs);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe('User message');
+  });
+
+  it('ignores non-text parts', async () => {
+    const userMsgInfo = createMockMessageInfo('msg-1', 'sess-1', 'user', 1000);
+    const textPart = createMockTextPart('part-1', 'sess-1', 'msg-1', 'Text content');
+    const filePart: Part = {
+      id: 'part-2',
+      sessionID: 'sess-1',
+      messageID: 'msg-1',
+      type: 'file',
+      mime: 'image/png',
+      url: 'data:image/png;base64,abc',
+    };
+
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(userMsgInfo),
+      'part/msg-1/part-1.json': JSON.stringify(textPart),
+      'part/msg-1/part-2.json': JSON.stringify(filePart),
+    });
+
+    const result = await loadUserMessagesForSession('sess-1', fs);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe('Text content');
+  });
+
+  it('handles corrupted message files gracefully', async () => {
+    const validUserMsg = createMockMessageInfo('msg-1', 'sess-1', 'user', 1000);
+    const textPart = createMockTextPart('part-1', 'sess-1', 'msg-1', 'Valid message');
+
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(validUserMsg),
+      'message/sess-1/corrupted.json': 'not valid json {{{',
+      'part/msg-1/part-1.json': JSON.stringify(textPart),
+    });
+
+    const result = await loadUserMessagesForSession('sess-1', fs);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe('Valid message');
+  });
+
+  it('handles corrupted part files gracefully', async () => {
+    const userMsgInfo = createMockMessageInfo('msg-1', 'sess-1', 'user', 1000);
+    const validPart = createMockTextPart('part-1', 'sess-1', 'msg-1', 'Valid text');
+
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(userMsgInfo),
+      'part/msg-1/part-1.json': JSON.stringify(validPart),
+      'part/msg-1/corrupted.json': 'not valid json {{{',
+    });
+
+    const result = await loadUserMessagesForSession('sess-1', fs);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe('Valid text');
+  });
+
+  it('skips user messages with no text parts', async () => {
+    const userMsgInfo = createMockMessageInfo('msg-1', 'sess-1', 'user', 1000);
+    // No parts for this message
+
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(userMsgInfo),
+    });
+
+    const result = await loadUserMessagesForSession('sess-1', fs);
+
+    expect(result).toEqual([]);
+  });
+
+  it('skips non-json files', async () => {
+    const userMsgInfo = createMockMessageInfo('msg-1', 'sess-1', 'user', 1000);
+    const textPart = createMockTextPart('part-1', 'sess-1', 'msg-1', 'Valid text');
+
+    const fs = createMockFileSystem({
+      'message/sess-1/msg-1.json': JSON.stringify(userMsgInfo),
+      'message/sess-1/readme.txt': 'not a message',
+      'part/msg-1/part-1.json': JSON.stringify(textPart),
+      'part/msg-1/notes.md': '# Notes',
+    });
+
+    const result = await loadUserMessagesForSession('sess-1', fs);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe('Valid text');
   });
 });

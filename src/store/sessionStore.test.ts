@@ -16,6 +16,7 @@ const resetStore = () => {
     selectedSessionId: null,
     isLoadingFolder: false,
     isLoadingSession: false,
+    isLoadingMessages: false,
     loadError: null,
     sidebarOpen: true,
   });
@@ -491,6 +492,137 @@ describe('sessionStore - multi-session state', () => {
       expect(useSessionStore.getState().session).toBeNull();
       expect(useSessionStore.getState().error).toBeNull();
     });
+  });
+});
+
+describe('sessionStore - loadUserMessages', () => {
+  beforeEach(() => {
+    resetStore();
+  });
+
+  it('does nothing when no file system is set', async () => {
+    const session = createMockSessionInfo('session-1', 'project-1');
+    const node = createMockSessionNode(session);
+    const project: ProjectInfo = {
+      id: 'project-1',
+      path: '/path',
+      sessions: [node],
+    };
+    useSessionStore.getState().setProjects([project]);
+
+    await useSessionStore.getState().loadUserMessages();
+
+    // allSessions should be unchanged (no userMessages added)
+    expect(useSessionStore.getState().allSessions['session-1'].userMessages).toBeUndefined();
+  });
+
+  it('sets isLoadingMessages to true during load', async () => {
+    const session = createMockSessionInfo('session-1', 'project-1');
+    const node = createMockSessionNode(session);
+    const project: ProjectInfo = {
+      id: 'project-1',
+      path: '/path',
+      sessions: [node],
+    };
+    const mockFs = createMockFileSystem(new Map());
+
+    useSessionStore.getState().setFileSystem(mockFs);
+    useSessionStore.getState().setProjects([project]);
+
+    // Start loading
+    const loadPromise = useSessionStore.getState().loadUserMessages();
+    await loadPromise;
+
+    // After completion, isLoadingMessages should be false
+    expect(useSessionStore.getState().isLoadingMessages).toBe(false);
+  });
+
+  it('loads user messages for all sessions', async () => {
+    const session1 = createMockSessionInfo('session-1', 'project-1');
+    const session2 = createMockSessionInfo('session-2', 'project-1');
+    const node1 = createMockSessionNode(session1);
+    const node2 = createMockSessionNode(session2);
+    const project: ProjectInfo = {
+      id: 'project-1',
+      path: '/path',
+      sessions: [node1, node2],
+    };
+
+    // Create messages for both sessions
+    const userMsg1 = {
+      id: 'msg-1',
+      sessionID: 'session-1',
+      role: 'user',
+      time: { created: Date.now() },
+      agent: 'test',
+      model: { providerID: 'test', modelID: 'test' },
+    };
+    const userMsg2 = {
+      id: 'msg-2',
+      sessionID: 'session-2',
+      role: 'user',
+      time: { created: Date.now() },
+      agent: 'test',
+      model: { providerID: 'test', modelID: 'test' },
+    };
+    const textPart1 = {
+      id: 'part-1',
+      sessionID: 'session-1',
+      messageID: 'msg-1',
+      type: 'text',
+      text: 'First session message',
+    };
+    const textPart2 = {
+      id: 'part-2',
+      sessionID: 'session-2',
+      messageID: 'msg-2',
+      type: 'text',
+      text: 'Second session message',
+    };
+
+    const files = new Map([
+      ['message/session-1/msg-1.json', JSON.stringify(userMsg1)],
+      ['message/session-2/msg-2.json', JSON.stringify(userMsg2)],
+      ['part/msg-1/part-1.json', JSON.stringify(textPart1)],
+      ['part/msg-2/part-2.json', JSON.stringify(textPart2)],
+    ]);
+    const mockFs = createMockFileSystem(files);
+
+    useSessionStore.getState().setFileSystem(mockFs);
+    useSessionStore.getState().setProjects([project]);
+
+    await useSessionStore.getState().loadUserMessages();
+
+    const { allSessions } = useSessionStore.getState();
+    expect(allSessions['session-1'].userMessages).toEqual(['First session message']);
+    expect(allSessions['session-2'].userMessages).toEqual(['Second session message']);
+  });
+
+  it('handles sessions with no messages gracefully', async () => {
+    const session = createMockSessionInfo('session-1', 'project-1');
+    const node = createMockSessionNode(session);
+    const project: ProjectInfo = {
+      id: 'project-1',
+      path: '/path',
+      sessions: [node],
+    };
+    const mockFs = createMockFileSystem(new Map()); // No message files
+
+    useSessionStore.getState().setFileSystem(mockFs);
+    useSessionStore.getState().setProjects([project]);
+
+    await useSessionStore.getState().loadUserMessages();
+
+    const { allSessions } = useSessionStore.getState();
+    expect(allSessions['session-1'].userMessages).toEqual([]);
+  });
+
+  it('clears isLoadingMessages in clearFolder', () => {
+    useSessionStore.setState({ isLoadingMessages: true });
+
+    useSessionStore.getState().clearFolder();
+
+    expect(useSessionStore.getState().isLoadingMessages).toBe(false);
   });
 });
 

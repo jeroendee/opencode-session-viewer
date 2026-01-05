@@ -1,5 +1,5 @@
 import type { VirtualFileSystem } from './fileSystem';
-import type { Session, SessionInfo, Message, MessageInfo, Part } from '../types/session';
+import type { Session, SessionInfo, Message, MessageInfo, Part, TextPart } from '../types/session';
 import type { ProjectInfo, SessionNode } from '../store/sessionStore';
 
 /**
@@ -323,4 +323,99 @@ export async function loadSessionContent(
   messages.sort((a, b) => a.info.time.created - b.info.time.created);
 
   return { info, messages };
+}
+
+/**
+ * Loads and extracts text content from all user messages in a session.
+ *
+ * @param sessionId - The ID of the session to load user messages for
+ * @param fs - Virtual file system to read from
+ * @returns Array of user message text strings (one per message)
+ */
+export async function loadUserMessagesForSession(
+  sessionId: string,
+  fs: VirtualFileSystem
+): Promise<string[]> {
+  const userMessageTexts: string[] = [];
+
+  // 1. List all messages from message/<sessionId>/
+  let messageFiles: string[];
+  try {
+    messageFiles = await fs.listDirectory(['message', sessionId]);
+  } catch {
+    // No message directory - return empty
+    return [];
+  }
+
+  // 2. Load each message and check if it's a user message
+  for (const msgFile of messageFiles) {
+    if (!msgFile.endsWith('.json')) {
+      continue;
+    }
+
+    const msgId = msgFile.replace('.json', '');
+    let msgJson: string | null;
+    try {
+      msgJson = await fs.readFile(['message', sessionId, msgFile]);
+    } catch {
+      continue;
+    }
+    if (!msgJson) continue;
+
+    let msgInfo: MessageInfo;
+    try {
+      msgInfo = JSON.parse(msgJson) as MessageInfo;
+    } catch {
+      continue;
+    }
+
+    // Only process user messages
+    if (msgInfo.role !== 'user') {
+      continue;
+    }
+
+    // 3. Load parts for this message and extract text
+    let partFiles: string[];
+    try {
+      partFiles = await fs.listDirectory(['part', msgId]);
+    } catch {
+      partFiles = [];
+    }
+
+    const textParts: string[] = [];
+
+    for (const partFile of partFiles) {
+      if (!partFile.endsWith('.json')) {
+        continue;
+      }
+
+      let partJson: string | null;
+      try {
+        partJson = await fs.readFile(['part', msgId, partFile]);
+      } catch {
+        continue;
+      }
+      if (!partJson) continue;
+
+      try {
+        const part = JSON.parse(partJson) as Part;
+        // Only extract text from text parts
+        if (part.type === 'text') {
+          const textPart = part as TextPart;
+          if (textPart.text) {
+            textParts.push(textPart.text);
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    // Join all text parts for this message
+    if (textParts.length > 0) {
+      userMessageTexts.push(textParts.join(' '));
+    }
+  }
+
+  return userMessageTexts;
 }
