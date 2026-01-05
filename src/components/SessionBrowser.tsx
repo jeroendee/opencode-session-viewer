@@ -5,6 +5,7 @@ import { groupSessionsByDirectory, groupSessionsByDate } from '../lib/sessionLoa
 import { useSidebarPreferences, type GroupingMode } from '../hooks/useSidebarPreferences';
 import { useSessionSearch } from '../hooks/useSessionSearch';
 import { LoadingSpinner } from './LoadingSpinner';
+import { buildSessionTooltip } from '../utils/formatters';
 
 interface SessionBrowserProps {
   sidebarOpen: boolean;
@@ -37,6 +38,8 @@ function SessionItem({
   const hasChildren = node.children.length > 0;
   const isSelected = selectedSessionId === node.session.id;
   const paddingLeft = 8 + depth * 16;
+  const displayTitle = node.session.title || 'Untitled Session';
+  const tooltip = buildSessionTooltip(node.session, { displayTitle });
 
   const handleToggleExpand = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -72,7 +75,7 @@ function SessionItem({
               ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200'
               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}
           `}
-          title={node.session.title}
+          title={tooltip}
         >
           <span className="block truncate">{node.session.title || 'Untitled Session'}</span>
         </button>

@@ -582,4 +582,64 @@ describe('SessionBrowser', () => {
       expect(screen.getByText('Untitled Session')).toBeInTheDocument();
     });
   });
+
+  describe('session item tooltips', () => {
+    it('shows rich tooltip with title, ID, and datetime', () => {
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      // First expand the directory
+      const opencodeButton = screen.getByRole('button', { name: /Expand opencode/i });
+      fireEvent.click(opencodeButton);
+
+      // Find the session button and check its title attribute
+      const sessionButton = screen.getByRole('button', { name: 'Implement feature X' });
+      const title = sessionButton.getAttribute('title');
+
+      // Tooltip should contain the session title
+      expect(title).toContain('Implement feature X');
+      // Tooltip should contain the session ID
+      expect(title).toContain('ID: session-1');
+      // Tooltip should contain a formatted date (contains the date)
+      expect(title).toMatch(/\d{4}/); // year
+    });
+
+    it('shows "Untitled Session" in tooltip for sessions without titles', () => {
+      vi.mocked(useSessionStore).mockReturnValue({
+        projects: [
+          {
+            id: 'proj-1',
+            path: '/test',
+            sessions: [
+              {
+                session: {
+                  id: 'session-untitled',
+                  version: '1.0',
+                  projectID: 'proj-1',
+                  directory: '/test',
+                  title: '',
+                  time: { created: 1704067200000, updated: 1704067200000 },
+                },
+                children: [],
+              },
+            ],
+          },
+        ],
+        selectedSessionId: null,
+        selectSession: mockSelectSession,
+        clearFolder: mockClearFolder,
+      } as ReturnType<typeof useSessionStore>);
+
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      // First expand the directory
+      const testButton = screen.getByRole('button', { name: /Expand test/i });
+      fireEvent.click(testButton);
+
+      const sessionButton = screen.getByRole('button', { name: 'Untitled Session' });
+      const title = sessionButton.getAttribute('title');
+
+      expect(title).toContain('Untitled Session');
+      expect(title).toContain('ID: session-untitled');
+    });
+  });
 });

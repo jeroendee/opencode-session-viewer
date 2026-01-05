@@ -187,3 +187,27 @@ export function truncate(text: string, maxLength: number): string {
   }
   return text.substring(0, maxLength - 3) + '...';
 }
+
+import type { SessionInfo } from '../types/session';
+
+/**
+ * Options for building session tooltips.
+ */
+export interface BuildSessionTooltipOptions {
+  /** Override display title (e.g., parsed sub-agent title). If not provided, uses session.title or 'Untitled Session'. */
+  displayTitle?: string;
+}
+
+/**
+ * Builds a rich tooltip string with session title, ID, and datetime.
+ * @param session - The session info object
+ * @param options - Optional configuration for tooltip display
+ */
+export function buildSessionTooltip(
+  session: SessionInfo,
+  options?: BuildSessionTooltipOptions
+): string {
+  const title = options?.displayTitle || session.title || 'Untitled Session';
+  const datetime = formatDate(session.time.updated);
+  return `${title}\nID: ${session.id}\n${datetime}`;
+}

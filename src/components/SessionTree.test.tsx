@@ -5,7 +5,7 @@ import { SessionTree, type SessionTreeProps } from './SessionTree';
 import type { SessionNode } from '../store/sessionStore';
 import type { SessionInfo } from '../types/session';
 
-// Mock formatRelativeTime to avoid time-based flakiness
+// Mock formatRelativeTime, formatDate, and buildSessionTooltip to avoid time-based flakiness
 vi.mock('../utils/formatters', () => ({
   formatRelativeTime: vi.fn((timestamp: number) => {
     // Return predictable values based on timestamp for testing
@@ -16,6 +16,15 @@ vi.mock('../utils/formatters', () => ({
     if (hours === 1) return '1 hour ago';
     if (hours < 24) return `${hours} hours ago`;
     return '1 day ago';
+  }),
+  formatDate: vi.fn((timestamp: number) => {
+    const date = new Date(timestamp);
+    return `Jan ${date.getDate()} 2024 12:00`;
+  }),
+  buildSessionTooltip: vi.fn((session: { id: string; title: string; time: { updated: number } }, options?: { displayTitle?: string }) => {
+    const title = options?.displayTitle || session.title || 'Untitled Session';
+    const date = new Date(session.time.updated);
+    return `${title}\nID: ${session.id}\nJan ${date.getDate()} 2024 12:00`;
   }),
 }));
 
@@ -690,6 +699,59 @@ describe('SessionTree', () => {
       // Last item should be focused
       expect(items[2]).toHaveAttribute('tabIndex', '0');
       expect(items[0]).toHaveAttribute('tabIndex', '-1');
+    });
+  });
+
+  describe('session item tooltips', () => {
+    it('shows rich tooltip with title, ID, and datetime', () => {
+      const nodes = [
+        createMockSessionNode(createMockSessionInfo('session-abc-123', 'Test session', 2)),
+      ];
+
+      renderTree({ nodes });
+
+      // Find the title span within the tree item
+      const titleSpan = screen.getByText('Test session');
+      const title = titleSpan.getAttribute('title');
+
+      // Tooltip should contain the session title
+      expect(title).toContain('Test session');
+      // Tooltip should contain the session ID
+      expect(title).toContain('ID: session-abc-123');
+      // Tooltip should contain a formatted date
+      expect(title).toMatch(/Jan \d+ 2024/);
+    });
+
+    it('shows "Untitled Session" in tooltip for sessions without titles', () => {
+      const nodes = [
+        createMockSessionNode(createMockSessionInfo('session-no-title', '', 0)),
+      ];
+
+      renderTree({ nodes });
+
+      const titleSpan = screen.getByText('Untitled Session');
+      const title = titleSpan.getAttribute('title');
+
+      expect(title).toContain('Untitled Session');
+      expect(title).toContain('ID: session-no-title');
+    });
+
+    it('shows shortened title in tooltip for sub-agent sessions', () => {
+      const nodes = [
+        createMockSessionNode(
+          createMockSessionInfo('agent-session', '@explore subagent: Find files')
+        ),
+      ];
+
+      renderTree({ nodes });
+
+      // The displayed text should be shortened
+      const titleSpan = screen.getByText('Find files');
+      const title = titleSpan.getAttribute('title');
+
+      // Tooltip should show the shortened display title, not the full original
+      expect(title).toContain('Find files');
+      expect(title).toContain('ID: agent-session');
     });
   });
 });

@@ -7,6 +7,7 @@ import {
   formatDate,
   formatFileChanges,
   truncate,
+  buildSessionTooltip,
 } from './formatters';
 
 describe('formatCost', () => {
@@ -137,5 +138,51 @@ describe('truncate', () => {
 
   it('handles exact length', () => {
     expect(truncate('hello', 5)).toBe('hello');
+  });
+});
+
+describe('buildSessionTooltip', () => {
+  const createSession = (id: string, updated: number, title = '') => ({
+    id,
+    version: '1.0',
+    projectID: 'proj-1',
+    directory: '/test',
+    title,
+    time: { created: updated, updated },
+  });
+
+  it('builds tooltip with provided display title option', () => {
+    const timestamp = Date.UTC(2024, 0, 1, 12, 30, 0);
+    const session = createSession('session-123', timestamp, 'Original Title');
+    const result = buildSessionTooltip(session, { displayTitle: 'My Session' });
+    expect(result).toContain('My Session');
+    expect(result).toContain('ID: session-123');
+    expect(result).toMatch(/Jan.*1.*2024/);
+  });
+
+  it('uses session title when displayTitle option not provided', () => {
+    const timestamp = Date.UTC(2024, 0, 1, 12, 30, 0);
+    const session = createSession('session-456', timestamp, 'Session Title');
+    const result = buildSessionTooltip(session);
+    expect(result).toContain('Session Title');
+    expect(result).toContain('ID: session-456');
+  });
+
+  it('uses default title when session has no title and no displayTitle option', () => {
+    const timestamp = Date.UTC(2024, 0, 1, 12, 30, 0);
+    const session = createSession('session-789', timestamp, '');
+    const result = buildSessionTooltip(session);
+    expect(result).toContain('Untitled Session');
+    expect(result).toContain('ID: session-789');
+  });
+
+  it('formats tooltip with newlines', () => {
+    const timestamp = Date.UTC(2024, 0, 1, 12, 30, 0);
+    const session = createSession('test-id', timestamp, 'Test');
+    const result = buildSessionTooltip(session);
+    const lines = result.split('\n');
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toBe('Test');
+    expect(lines[1]).toBe('ID: test-id');
   });
 });

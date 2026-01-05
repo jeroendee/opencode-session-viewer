@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo, type MouseEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import type { SessionNode } from '../store/sessionStore';
-import { formatRelativeTime } from '../utils/formatters';
+import { formatRelativeTime, buildSessionTooltip } from '../utils/formatters';
 import { parseSubAgentTitle } from '../utils/subAgentParsing';
 import { useKeyboardNavigation, flattenVisibleItems } from '../hooks/useKeyboardNavigation';
 
@@ -62,6 +62,7 @@ function SessionTreeItem({
   const subAgentInfo = parseSubAgentTitle(node.session.title);
   const displayTitle = subAgentInfo?.displayTitle || node.session.title || 'Untitled Session';
   const SubAgentIcon = subAgentInfo?.icon;
+  const tooltip = buildSessionTooltip(node.session, { displayTitle });
 
   const handleClick = useCallback(() => {
     onSelect(node.session.id);
@@ -135,7 +136,7 @@ function SessionTreeItem({
       )}
 
       {/* Title */}
-      <span className="flex-1 truncate" title={displayTitle}>
+      <span className="flex-1 truncate" title={tooltip}>
         {displayTitle}
       </span>
 
