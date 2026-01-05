@@ -58,11 +58,16 @@ describe('SessionBreadcrumb', () => {
   });
 
   describe('rendering with parent', () => {
-    it('shows parent session title when parentID exists', () => {
+    it('shows parent and current session titles when parentID exists', () => {
       renderBreadcrumb();
 
-      expect(screen.getByText('Parent Session')).toBeInTheDocument();
-      expect(screen.getByText('Child Session')).toBeInTheDocument();
+      // Parent should be an ancestor link with title attribute
+      const ancestorLink = screen.getByTestId('breadcrumb-ancestor-0');
+      expect(ancestorLink).toHaveAttribute('title', 'Parent Session');
+      
+      // Current session should be in the breadcrumb current element
+      const currentElement = screen.getByTestId('breadcrumb-current');
+      expect(currentElement).toHaveAttribute('title', 'Child Session');
     });
 
     it('shows the back arrow button', () => {
@@ -255,7 +260,7 @@ describe('SessionBreadcrumb', () => {
       expect(screen.queryByTestId('breadcrumb-ancestor-0')).not.toBeInTheDocument();
     });
 
-    it('truncates long titles', () => {
+    it('truncates long titles while preserving full title in title attribute', () => {
       const longTitle = 'A'.repeat(50);
       const parent = createMockSessionInfo('parent-1', longTitle);
       const child = createMockSessionInfo('child-1', 'Child', 'parent-1');
@@ -269,9 +274,11 @@ describe('SessionBreadcrumb', () => {
       });
 
       const ancestorLink = screen.getByTestId('breadcrumb-ancestor-0');
-      // Should be truncated to 40 chars (39 + ellipsis)
-      expect(ancestorLink.textContent).toHaveLength(40);
-      expect(ancestorLink.textContent?.endsWith('\u2026')).toBe(true);
+      // Visible text should be truncated (shorter than full title) and end with ellipsis
+      expect(ancestorLink.textContent!.length).toBeLessThan(longTitle.length);
+      expect(ancestorLink.textContent).toContain('\u2026');
+      // Full title should be preserved in title attribute for hover tooltip
+      expect(ancestorLink).toHaveAttribute('title', longTitle);
     });
   });
 
