@@ -186,8 +186,11 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
   const handleSelectSession = useCallback(
     (sessionId: string) => {
       selectSession(sessionId);
-      // Close sidebar on mobile after selection
-      onCloseSidebar?.();
+      // Close sidebar on mobile after selection (md breakpoint = 768px)
+      const isMobile = window.matchMedia('(max-width: 767px)').matches;
+      if (isMobile) {
+        onCloseSidebar?.();
+      }
     },
     [selectSession, onCloseSidebar]
   );

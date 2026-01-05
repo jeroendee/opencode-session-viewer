@@ -82,6 +82,20 @@ describe('SessionBrowser', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Mock matchMedia for mobile detection
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false, // Default to desktop
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
     vi.mocked(useSessionStore).mockReturnValue({
       projects: createMockProjects(),
       selectedSessionId: null,
@@ -244,7 +258,22 @@ describe('SessionBrowser', () => {
       expect(otherButton).not.toHaveAttribute('aria-current');
     });
 
-    it('calls onCloseSidebar after selecting a session', () => {
+    it('calls onCloseSidebar after selecting a session on mobile', () => {
+      // Simulate mobile viewport
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          matches: query === '(max-width: 767px)', // Mobile viewport
+          media: query,
+          onchange: null,
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      });
+
       const mockCloseSidebar = vi.fn();
       render(<SessionBrowser sidebarOpen={true} onCloseSidebar={mockCloseSidebar} />);
 
@@ -252,6 +281,17 @@ describe('SessionBrowser', () => {
       fireEvent.click(sessionButton);
 
       expect(mockCloseSidebar).toHaveBeenCalled();
+    });
+
+    it('does not call onCloseSidebar after selecting a session on desktop', () => {
+      // Default matchMedia mock returns false (desktop)
+      const mockCloseSidebar = vi.fn();
+      render(<SessionBrowser sidebarOpen={true} onCloseSidebar={mockCloseSidebar} />);
+
+      const sessionButton = screen.getByRole('button', { name: 'Implement feature X' });
+      fireEvent.click(sessionButton);
+
+      expect(mockCloseSidebar).not.toHaveBeenCalled();
     });
   });
 
