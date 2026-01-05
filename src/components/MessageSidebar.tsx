@@ -2,21 +2,34 @@ import { useMemo, useRef, useImperativeHandle, forwardRef } from 'react';
 import { X } from 'lucide-react';
 import { useSessionStore } from '../store/sessionStore';
 import { groupMessages } from '../utils/groupMessages';
-import { useSearch } from '../hooks/useSearch';
 import { SearchBar } from './SearchBar';
 import { MessageIndex } from './MessageIndex';
 import { JumpToDropdown } from './JumpToDropdown';
+import type { SearchResult } from '../hooks/useSearch';
 
 interface MessageSidebarProps {
   activeMessageId: string | null;
   onMessageClick: (messageId: string) => void;
+  searchQuery: string;
+  searchResults: SearchResult[];
+  matchedMessageIds: Set<string>;
+  onSearchQueryChange: (query: string) => void;
+  onClearSearch: () => void;
 }
 
 export interface MessageSidebarHandle {
   focusSearch: () => void;
 }
 
-export const MessageSidebar = forwardRef<MessageSidebarHandle, MessageSidebarProps>(function MessageSidebar({ activeMessageId, onMessageClick }, ref) {
+export const MessageSidebar = forwardRef<MessageSidebarHandle, MessageSidebarProps>(function MessageSidebar({ 
+  activeMessageId, 
+  onMessageClick,
+  searchQuery,
+  searchResults,
+  matchedMessageIds,
+  onSearchQueryChange,
+  onClearSearch,
+}, ref) {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useImperativeHandle(ref, () => ({
@@ -29,14 +42,6 @@ export const MessageSidebar = forwardRef<MessageSidebarHandle, MessageSidebarPro
   const groups = useMemo(() => {
     return session ? groupMessages(session.messages) : [];
   }, [session]);
-
-  const {
-    searchQuery,
-    searchResults,
-    matchedMessageIds,
-    setSearchQuery,
-    clearSearch,
-  } = useSearch(session);
 
   // Find current index for JumpToDropdown
   const currentIndex = useMemo(() => {
@@ -86,8 +91,8 @@ export const MessageSidebar = forwardRef<MessageSidebarHandle, MessageSidebarPro
             <SearchBar
               ref={searchInputRef}
               value={searchQuery}
-              onChange={setSearchQuery}
-              onClear={clearSearch}
+              onChange={onSearchQueryChange}
+              onClear={onClearSearch}
               resultCount={searchResults.length}
               isLoading={isLoadingMessages}
             />

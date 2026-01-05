@@ -10,8 +10,10 @@ import { SkeletonContent } from './components/SkeletonLoader';
 import { useSessionStore } from './store/sessionStore';
 import { useNavigation } from './hooks/useNavigation';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useSearch } from './hooks/useSearch';
 import { groupMessages } from './utils/groupMessages';
 import { SessionNavigationProvider } from './contexts/SessionNavigationContext';
+import { SearchProvider } from './contexts/SearchContext';
 
 function App() {
   const { 
@@ -27,6 +29,15 @@ function App() {
   } = useSessionStore();
   const { activeMessageId, scrollToMessage } = useNavigation();
   const messageSidebarRef = useRef<MessageSidebarHandle>(null);
+
+  // Search state lifted to App level so it can be shared via context
+  const {
+    searchQuery,
+    searchResults,
+    matchedMessageIds,
+    setSearchQuery,
+    clearSearch,
+  } = useSearch(session);
 
   const groups = useMemo(() => {
     return session ? groupMessages(session.messages) : [];
@@ -118,13 +129,15 @@ function App() {
           {isLoadingSession ? (
             <SkeletonContent />
           ) : session ? (
-            <SessionNavigationProvider
-              allSessions={allSessions}
-              fileSystem={fileSystem}
-              onNavigateToSession={handleNavigateToSession}
-            >
-              <MessageList />
-            </SessionNavigationProvider>
+            <SearchProvider searchQuery={searchQuery}>
+              <SessionNavigationProvider
+                allSessions={allSessions}
+                fileSystem={fileSystem}
+                onNavigateToSession={handleNavigateToSession}
+              >
+                <MessageList />
+              </SessionNavigationProvider>
+            </SearchProvider>
           ) : (
             <SelectSessionPrompt />
           )}
@@ -136,6 +149,11 @@ function App() {
             ref={messageSidebarRef}
             activeMessageId={activeMessageId}
             onMessageClick={scrollToMessage}
+            searchQuery={searchQuery}
+            searchResults={searchResults}
+            matchedMessageIds={matchedMessageIds}
+            onSearchQueryChange={setSearchQuery}
+            onClearSearch={clearSearch}
           />
         )}
       </div>

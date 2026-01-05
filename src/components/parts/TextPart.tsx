@@ -1,10 +1,12 @@
-import { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Copy, Check } from 'lucide-react';
 import type { TextPart as TextPartType } from '../../types/session';
+import { useSearchContextSafe } from '../../contexts/SearchContext';
+import { highlightText } from '../../utils/highlightText';
 
 interface TextPartProps {
   part: TextPartType;
@@ -125,14 +127,77 @@ const markdownComponents: Components = {
   ),
 };
 
+/**
+ * Recursively processes React children to highlight search matches in text nodes.
+ * Preserves structure of non-text elements.
+ * Skips code elements to avoid highlighting inside inline code.
+ */
+function highlightChildren(children: React.ReactNode, query: string): React.ReactNode {
+  if (!query.trim()) {
+    return children;
+  }
+
+  return React.Children.map(children, (child, index) => {
+    if (typeof child === 'string') {
+      return <React.Fragment key={index}>{highlightText(child, query)}</React.Fragment>;
+    }
+    if (React.isValidElement(child)) {
+      // Skip highlighting inside code elements (inline code)
+      if (child.type === 'code' || (typeof child.type === 'function' && child.type.name === 'CodeBlock')) {
+        return child;
+      }
+      // Recursively process children of other elements
+      if (child.props.children) {
+        return React.cloneElement(child, {
+          ...child.props,
+          children: highlightChildren(child.props.children, query),
+        });
+      }
+    }
+    return child;
+  });
+}
+
 export function TextPart({ part }: TextPartProps) {
+  const { searchQuery } = useSearchContextSafe();
+
+  // Create markdown components with search highlighting for prose elements
+  // We highlight text in paragraphs, list items, table cells, etc. but NOT in code
+  const componentsWithHighlighting = useMemo<Components>(() => {
+    if (!searchQuery.trim()) {
+      return markdownComponents;
+    }
+
+    // Helper to create a highlighting wrapper for text-containing elements
+    const withHighlighting = (Tag: keyof JSX.IntrinsicElements, className?: string) => {
+      return ({ children }: { children?: React.ReactNode }) => {
+        const highlighted = highlightChildren(children, searchQuery);
+        return className 
+          ? <Tag className={className}>{highlighted}</Tag>
+          : <Tag>{highlighted}</Tag>;
+      };
+    };
+
+    return {
+      ...markdownComponents,
+      // Override prose elements to highlight text
+      p: withHighlighting('p'),
+      li: withHighlighting('li'),
+      td: withHighlighting('td', 'border border-gray-300 dark:border-gray-600 px-3 py-2'),
+      th: withHighlighting('th', 'border border-gray-300 dark:border-gray-600 px-3 py-2 bg-gray-100 dark:bg-gray-700 font-semibold text-left'),
+      strong: withHighlighting('strong'),
+      em: withHighlighting('em'),
+      // Note: code blocks and inline code are NOT overridden, so they won't be highlighted
+    };
+  }, [searchQuery]);
+
   if (part.ignored) {
     return null;
   }
 
   return (
     <div className="prose prose-gray dark:prose-invert max-w-none text-gray-800 dark:text-gray-200">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={componentsWithHighlighting}>
         {part.text}
       </ReactMarkdown>
     </div>
