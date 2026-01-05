@@ -3,9 +3,10 @@ import { X } from 'lucide-react';
 import { useSessionStore } from '../store/sessionStore';
 import { groupMessages } from '../utils/groupMessages';
 import { SearchBar } from './SearchBar';
+import { SearchFilterToggle } from './SearchFilterToggle';
 import { MessageIndex } from './MessageIndex';
 import { JumpToDropdown } from './JumpToDropdown';
-import type { SearchResult } from '../hooks/useSearch';
+import type { SearchResult, MessageFilter } from '../hooks/useSearch';
 
 interface MessageSidebarProps {
   activeMessageId: string | null;
@@ -13,7 +14,9 @@ interface MessageSidebarProps {
   searchQuery: string;
   searchResults: SearchResult[];
   matchedMessageIds: Set<string>;
+  messageFilter: MessageFilter;
   onSearchQueryChange: (query: string) => void;
+  onMessageFilterChange: (filter: MessageFilter) => void;
   onClearSearch: () => void;
 }
 
@@ -27,7 +30,9 @@ export const MessageSidebar = forwardRef<MessageSidebarHandle, MessageSidebarPro
   searchQuery,
   searchResults,
   matchedMessageIds,
+  messageFilter,
   onSearchQueryChange,
+  onMessageFilterChange,
   onClearSearch,
 }, ref) {
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -95,6 +100,10 @@ export const MessageSidebar = forwardRef<MessageSidebarHandle, MessageSidebarPro
               onClear={onClearSearch}
               resultCount={searchResults.length}
               isLoading={isLoadingMessages}
+            />
+            <SearchFilterToggle
+              value={messageFilter}
+              onChange={onMessageFilterChange}
             />
             <JumpToDropdown
               groups={groups}

@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { Session, Part } from '../types/session';
-import { isTextPart, isToolPart, isReasoningPart, isToolCompleted, isToolError, isAssistantMessage } from '../types/session';
+import { isTextPart, isToolPart, isReasoningPart, isToolCompleted, isToolError, isAssistantMessage, isUserMessage } from '../types/session';
 
 export interface SearchResult {
   messageId: string;
@@ -10,12 +10,17 @@ export interface SearchResult {
   context: string;
 }
 
+/** Filter options for which messages to search */
+export type MessageFilter = 'all' | 'user';
+
 interface UseSearchReturn {
   searchQuery: string;
   searchResults: SearchResult[];
   isSearching: boolean;
   matchedMessageIds: Set<string>;
+  messageFilter: MessageFilter;
   setSearchQuery: (query: string) => void;
+  setMessageFilter: (filter: MessageFilter) => void;
   clearSearch: () => void;
 }
 
@@ -59,8 +64,9 @@ function getContext(text: string, matchIndex: number, contextLength = 50): strin
 
 /**
  * Search through a session's messages for a query.
+ * @param filter - 'all' to search all messages, 'user' to search only user messages
  */
-function searchSession(session: Session, query: string): SearchResult[] {
+function searchSession(session: Session, query: string, filter: MessageFilter = 'all'): SearchResult[] {
   if (!query.trim()) {
     return [];
   }
@@ -69,6 +75,11 @@ function searchSession(session: Session, query: string): SearchResult[] {
   const lowerQuery = query.toLowerCase();
 
   for (const message of session.messages) {
+    // Skip non-user messages if filter is 'user'
+    if (filter === 'user' && !isUserMessage(message)) {
+      continue;
+    }
+
     // Use parentID for assistant messages to align with MessageIndex grouping.
     // If parentID is absent, use the message's own ID.
     const groupMessageId = isAssistantMessage(message) 
@@ -107,15 +118,16 @@ function searchSession(session: Session, query: string): SearchResult[] {
  */
 export function useSearch(session: Session | null): UseSearchReturn {
   const [searchQuery, setSearchQuery] = useState('');
+  const [messageFilter, setMessageFilter] = useState<MessageFilter>('all');
 
-  // Compute search results when query or session changes
+  // Compute search results when query, session, or filter changes
   // Search is synchronous so no loading state needed
   const searchResults = useMemo(() => {
     if (!session || !searchQuery.trim()) {
       return [];
     }
-    return searchSession(session, searchQuery);
-  }, [session, searchQuery]);
+    return searchSession(session, searchQuery, messageFilter);
+  }, [session, searchQuery, messageFilter]);
 
   // Always false since search is synchronous
   const isSearching = false;
@@ -134,7 +146,9 @@ export function useSearch(session: Session | null): UseSearchReturn {
     searchResults,
     isSearching,
     matchedMessageIds,
+    messageFilter,
     setSearchQuery,
+    setMessageFilter,
     clearSearch,
   };
 }

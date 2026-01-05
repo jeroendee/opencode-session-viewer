@@ -256,4 +256,113 @@ describe('useSearch', () => {
       expect(result.current.matchedMessageIds.size).toBe(0);
     });
   });
+
+  describe('messageFilter', () => {
+    it('defaults to "all" filter', () => {
+      const session = createSession([
+        createUserMessage('user-1', 'Hello world'),
+      ]);
+
+      const { result } = renderHook(() => useSearch(session));
+
+      expect(result.current.messageFilter).toBe('all');
+    });
+
+    it('searches all messages when filter is "all"', () => {
+      const userMsg = createUserMessage('user-1', 'Hello world');
+      const assistantMsg = createAssistantMessage('assistant-1', 'user-1', 'Hello back to you');
+      const session = createSession([userMsg, assistantMsg]);
+
+      const { result } = renderHook(() => useSearch(session));
+
+      act(() => {
+        result.current.setSearchQuery('hello');
+      });
+
+      // Should find matches in both user and assistant messages
+      expect(result.current.searchResults.length).toBe(2);
+    });
+
+    it('searches only user messages when filter is "user"', () => {
+      const userMsg = createUserMessage('user-1', 'Hello world');
+      const assistantMsg = createAssistantMessage('assistant-1', 'user-1', 'Hello back to you');
+      const session = createSession([userMsg, assistantMsg]);
+
+      const { result } = renderHook(() => useSearch(session));
+
+      act(() => {
+        result.current.setMessageFilter('user');
+        result.current.setSearchQuery('hello');
+      });
+
+      // Should only find match in user message
+      expect(result.current.searchResults.length).toBe(1);
+      expect(result.current.searchResults[0].type).toBe('user');
+    });
+
+    it('returns no results when search term only exists in assistant message and filter is "user"', () => {
+      const userMsg = createUserMessage('user-1', 'Hello world');
+      const assistantMsg = createAssistantMessage('assistant-1', 'user-1', 'Goodbye and farewell');
+      const session = createSession([userMsg, assistantMsg]);
+
+      const { result } = renderHook(() => useSearch(session));
+
+      act(() => {
+        result.current.setMessageFilter('user');
+        result.current.setSearchQuery('goodbye');
+      });
+
+      // Should not find any matches since "goodbye" is only in assistant message
+      expect(result.current.searchResults.length).toBe(0);
+    });
+
+    it('can switch filter from "all" to "user" and back', () => {
+      const userMsg = createUserMessage('user-1', 'Hello world');
+      const assistantMsg = createAssistantMessage('assistant-1', 'user-1', 'Hello back to you');
+      const session = createSession([userMsg, assistantMsg]);
+
+      const { result } = renderHook(() => useSearch(session));
+
+      act(() => {
+        result.current.setSearchQuery('hello');
+      });
+      expect(result.current.searchResults.length).toBe(2);
+
+      act(() => {
+        result.current.setMessageFilter('user');
+      });
+      expect(result.current.searchResults.length).toBe(1);
+
+      act(() => {
+        result.current.setMessageFilter('all');
+      });
+      expect(result.current.searchResults.length).toBe(2);
+    });
+
+    it('updates matchedMessageIds when filter changes', () => {
+      const user1 = createUserMessage('user-1', 'Hello world');
+      const assistant1 = createAssistantMessage('assistant-1', 'user-1', 'Hi!');
+      const user2 = createUserMessage('user-2', 'Another message');
+      const assistant2 = createAssistantMessage('assistant-2', 'user-2', 'Hello from assistant');
+      const session = createSession([user1, assistant1, user2, assistant2]);
+
+      const { result } = renderHook(() => useSearch(session));
+
+      act(() => {
+        result.current.setSearchQuery('hello');
+      });
+      // "Hello" appears in user-1 and assistant-2 (which maps to user-2)
+      expect(result.current.matchedMessageIds.size).toBe(2);
+      expect(result.current.matchedMessageIds.has('user-1')).toBe(true);
+      expect(result.current.matchedMessageIds.has('user-2')).toBe(true);
+
+      act(() => {
+        result.current.setMessageFilter('user');
+      });
+      // Only user-1 has "Hello" in user messages
+      expect(result.current.matchedMessageIds.size).toBe(1);
+      expect(result.current.matchedMessageIds.has('user-1')).toBe(true);
+      expect(result.current.matchedMessageIds.has('user-2')).toBe(false);
+    });
+  });
 });

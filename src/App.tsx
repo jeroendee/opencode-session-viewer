@@ -35,7 +35,9 @@ function App() {
     searchQuery,
     searchResults,
     matchedMessageIds,
+    messageFilter,
     setSearchQuery,
+    setMessageFilter,
     clearSearch,
   } = useSearch(session);
 
@@ -152,7 +154,9 @@ function App() {
             searchQuery={searchQuery}
             searchResults={searchResults}
             matchedMessageIds={matchedMessageIds}
+            messageFilter={messageFilter}
             onSearchQueryChange={setSearchQuery}
+            onMessageFilterChange={setMessageFilter}
             onClearSearch={clearSearch}
           />
         )}
