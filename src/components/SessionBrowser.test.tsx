@@ -184,12 +184,10 @@ describe('SessionBrowser', () => {
       // Child session is nested under parent and requires expanding the parent
       expect(screen.queryByText('Explore implementation')).not.toBeInTheDocument();
       
-      // Find and click the expand button for the parent session (the one next to "Implement feature X")
-      const parentSessionRow = screen.getByText('Implement feature X').closest('div');
-      const expandParentButton = parentSessionRow?.parentElement?.querySelector('button[aria-label="Expand"]');
-      if (expandParentButton) {
-        fireEvent.click(expandParentButton);
-      }
+      // Click the expand button for the parent session using accessible name
+      const expandParentButton = screen.getByRole('button', { name: /Expand Implement feature X/i });
+      fireEvent.click(expandParentButton);
+      
       expect(screen.getByText('Explore implementation')).toBeInTheDocument();
     });
 
@@ -286,12 +284,9 @@ describe('SessionBrowser', () => {
       const opencodeButton = screen.getByRole('button', { name: /Expand opencode/i });
       fireEvent.click(opencodeButton);
 
-      // Find and click the expand button for the parent session
-      const parentSessionRow = screen.getByText('Implement feature X').closest('div');
-      const expandParentButton = parentSessionRow?.parentElement?.querySelector('button[aria-label="Expand"]');
-      if (expandParentButton) {
-        fireEvent.click(expandParentButton);
-      }
+      // Click the expand button for the parent session using accessible name
+      const expandParentButton = screen.getByRole('button', { name: /Expand Implement feature X/i });
+      fireEvent.click(expandParentButton);
 
       const childSession = screen.getByRole('button', { name: 'Explore implementation' });
       fireEvent.click(childSession);

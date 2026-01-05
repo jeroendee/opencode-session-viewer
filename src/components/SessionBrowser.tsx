@@ -51,7 +51,7 @@ function SessionItem({
           <button
             onClick={handleToggleExpand}
             className="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-            aria-label={isExpanded ? 'Collapse' : 'Expand'}
+            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${node.session.title || 'session'}`}
             style={{ marginLeft: `${paddingLeft - 16}px` }}
           >
             {isExpanded ? (
