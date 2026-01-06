@@ -70,6 +70,7 @@ export interface ClaudeUserMessage {
   uuid?: string;
   parentUuid?: string;
   timestamp?: string;
+  sessionId?: string;
   message: {
     role: 'user';
     content: string | ClaudeContentBlock[];
@@ -86,6 +87,7 @@ export interface ClaudeAssistantMessage {
   uuid?: string;
   parentUuid?: string;
   timestamp?: string;
+  sessionId?: string;
   message: {
     role: 'assistant';
     content: ClaudeContentBlock[];

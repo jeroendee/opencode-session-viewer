@@ -15,18 +15,30 @@ export interface LoadClaudeSessionsResult {
   errorCount: number;
 }
 
+/**
+ * Result of extracting session info from Claude JSONL.
+ * Includes SessionInfo fields plus optional sessionId from first entry for parent linking.
+ */
+export interface ExtractSessionInfoResult extends SessionInfo {
+  sessionId?: string;
+}
+
 const MAX_TITLE_LENGTH = 100;
 
 /**
  * Extracts SessionInfo from Claude JSONL transcript content.
+ * Also extracts sessionId from first entry for parent linking.
  */
 export function extractSessionInfoFromClaude(
   jsonlContent: string,
   sessionId: string,
   projectPath: string
-): SessionInfo {
+): ExtractSessionInfoResult {
   const entries = parseClaudeJsonl(jsonlContent);
   const now = Date.now();
+
+  // Extract sessionId from first entry (for parent linking)
+  const parentSessionId = entries.length > 0 ? entries[0].sessionId : undefined;
 
   // Extract title from first user message
   let title = sessionId;
@@ -60,6 +72,7 @@ export function extractSessionInfoFromClaude(
     directory: projectPath,
     title,
     time: { created: now, updated: now },
+    sessionId: parentSessionId,
   };
 }
 
@@ -89,8 +102,52 @@ export async function listClaudeSessionInfos(
 }
 
 /**
+ * Builds a tree of session nodes from a flat list of sessions.
+ * Sessions with parentID become children of their parent session.
+ *
+ * Based on sessionLoader.ts buildSessionTree but simplified for Claude sessions.
+ */
+function buildClaudeSessionTree(sessions: SessionInfo[]): SessionNode[] {
+  const nodeMap = new Map<string, SessionNode>();
+  const roots: SessionNode[] = [];
+
+  // Create nodes for all sessions
+  for (const session of sessions) {
+    nodeMap.set(session.id, { session, children: [] });
+  }
+
+  // Build parent-child relationships
+  for (const session of sessions) {
+    const node = nodeMap.get(session.id)!;
+
+    if (session.parentID && nodeMap.has(session.parentID)) {
+      // Has valid parent - add as child
+      nodeMap.get(session.parentID)!.children.push(node);
+    } else {
+      // No parent or parent not found - treat as root
+      roots.push(node);
+    }
+  }
+
+  // Sort children by creation time (oldest first)
+  for (const node of nodeMap.values()) {
+    node.children.sort((a, b) => a.session.time.created - b.session.time.created);
+  }
+
+  // Sort roots by updated time (most recent first)
+  roots.sort((a, b) => b.session.time.updated - a.session.time.updated);
+
+  return roots;
+}
+
+/**
  * Loads all Claude sessions from the projects/ directory.
  * Returns LoadSessionsResult shape matching OpenCode's loadAllSessions.
+ *
+ * Uses two-pass approach:
+ * 1. First pass loads all sessions with sessionId from JSONL
+ * 2. Second pass sets parentID where sessionId maps to existing session ID
+ * 3. Builds tree structure using buildClaudeSessionTree
  *
  * @throws StorageError with NOT_STORAGE_FOLDER when projects/ not found
  */
@@ -119,7 +176,8 @@ export async function loadAllClaudeSessions(
 
   // Process each project
   for (const project of claudeProjects) {
-    const projectSessions: SessionNode[] = [];
+    // Temporary storage for sessions with their sessionId (for parent linking)
+    const projectSessionInfos: ExtractSessionInfoResult[] = [];
 
     // List JSONL files in this project
     let files: string[];
@@ -132,7 +190,7 @@ export async function loadAllClaudeSessions(
 
     const jsonlFiles = files.filter((f) => f.endsWith('.jsonl'));
 
-    // Process each session file
+    // PASS 1: Load all sessions with sessionId
     for (const file of jsonlFiles) {
       try {
         const content = await fs.readFile(['projects', project.encoded, file]);
@@ -147,24 +205,46 @@ export async function loadAllClaudeSessions(
         // Set projectID to encoded path per spec
         info.projectID = project.encoded;
 
-        // Add to flat sessions record
-        sessions[sessionId] = info;
-
-        // Add to project's SessionNode array (no children for Claude sessions)
-        projectSessions.push({
-          session: info,
-          children: [],
-        });
+        projectSessionInfos.push(info);
       } catch {
         errorCount++;
       }
     }
 
+    // Build set of valid session IDs in this project
+    const validSessionIds = new Set(projectSessionInfos.map((s) => s.id));
+
+    // PASS 2: Set parentID where sessionId maps to existing session
+    const finalSessions: SessionInfo[] = [];
+    for (const info of projectSessionInfos) {
+      // Convert ExtractSessionInfoResult to SessionInfo
+      // Set parentID if sessionId points to valid session
+      const sessionInfo: SessionInfo = {
+        id: info.id,
+        version: info.version,
+        projectID: info.projectID,
+        directory: info.directory,
+        title: info.title,
+        time: info.time,
+      };
+
+      // If this session has a sessionId that matches an existing session, set parentID
+      if (info.sessionId && validSessionIds.has(info.sessionId)) {
+        sessionInfo.parentID = info.sessionId;
+      }
+
+      finalSessions.push(sessionInfo);
+      sessions[sessionInfo.id] = sessionInfo;
+    }
+
+    // Build tree structure
+    const sessionTree = buildClaudeSessionTree(finalSessions);
+
     // Add project to result
     projects.push({
       id: project.encoded,
       path: project.decoded,
-      sessions: projectSessions,
+      sessions: sessionTree,
     });
   }
 

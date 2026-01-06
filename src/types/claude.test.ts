@@ -46,6 +46,31 @@ describe('Claude TypeScript Types', () => {
       expect(userMessage.message.content).toBe('Hello, this is a simple string message');
     });
 
+    it('accepts optional sessionId field for agent parent linking', () => {
+      const userMessage: ClaudeUserMessage = {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: 'Hello',
+        },
+        sessionId: 'parent-session-uuid-123',
+      };
+
+      expect(userMessage.sessionId).toBe('parent-session-uuid-123');
+    });
+
+    it('allows sessionId to be undefined', () => {
+      const userMessage: ClaudeUserMessage = {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: 'Hello',
+        },
+      };
+
+      expect(userMessage.sessionId).toBeUndefined();
+    });
+
     it('accepts user message with tool_result content', () => {
       const toolResult: ClaudeToolResult = {
         type: 'tool_result',
@@ -101,6 +126,31 @@ describe('Claude TypeScript Types', () => {
       };
 
       expect(assistantMessage.message.content[0].type).toBe('tool_use');
+    });
+
+    it('accepts optional sessionId field for agent parent linking', () => {
+      const assistantMessage: ClaudeAssistantMessage = {
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Response' }],
+        },
+        sessionId: 'parent-session-uuid-456',
+      };
+
+      expect(assistantMessage.sessionId).toBe('parent-session-uuid-456');
+    });
+
+    it('allows sessionId to be undefined', () => {
+      const assistantMessage: ClaudeAssistantMessage = {
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Response' }],
+        },
+      };
+
+      expect(assistantMessage.sessionId).toBeUndefined();
     });
 
     it('accepts assistant message with usage data', () => {

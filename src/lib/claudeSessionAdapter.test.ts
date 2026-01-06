@@ -76,6 +76,32 @@ describe('claudeSessionAdapter', () => {
 
       expect(info.title).toBe('My string message');
     });
+
+    it('returns sessionId when present in first JSONL entry', () => {
+      const jsonl = `{"type":"user","sessionId":"parent-session-abc","message":{"role":"user","content":[{"type":"text","text":"Hello"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hi!"}]}}`;
+
+      const result = extractSessionInfoFromClaude(
+        jsonl,
+        'session-123',
+        '/Users/test/project'
+      );
+
+      expect(result.sessionId).toBe('parent-session-abc');
+    });
+
+    it('returns undefined sessionId when no sessionId in entries', () => {
+      const jsonl = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hi!"}]}}`;
+
+      const result = extractSessionInfoFromClaude(
+        jsonl,
+        'session-456',
+        '/Users/test/project'
+      );
+
+      expect(result.sessionId).toBeUndefined();
+    });
   });
 
   describe('listClaudeSessionInfos', () => {
@@ -246,6 +272,172 @@ describe('claudeSessionAdapter', () => {
       expect(result.projects).toHaveLength(1);
       expect(result.projects[0].sessions).toHaveLength(0);
       expect(result.errorCount).toBe(0);
+    });
+
+    describe('session hierarchy', () => {
+      it('sets parentID on agent sessions when sessionId matches existing session', async () => {
+        // Main session has no sessionId, agent session has sessionId pointing to main
+        const mainJsonl = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Main session"}]}}`;
+        const agentJsonl = `{"type":"user","sessionId":"main-session","message":{"role":"user","content":[{"type":"text","text":"Agent task"}]}}`;
+
+        const mockFs: VirtualFileSystem = {
+          readFile: vi.fn().mockImplementation(async (path: string[]) => {
+            const filename = path[path.length - 1];
+            if (filename === 'main-session.jsonl') return mainJsonl;
+            if (filename === 'agent-session.jsonl') return agentJsonl;
+            return null;
+          }),
+          listDirectory: vi.fn().mockImplementation(async (path: string[]) => {
+            if (path.length === 1 && path[0] === 'projects') {
+              return ['-Users-test-project'];
+            }
+            if (path.length === 2 && path[1] === '-Users-test-project') {
+              return ['main-session.jsonl', 'agent-session.jsonl'];
+            }
+            return [];
+          }),
+          exists: vi.fn().mockResolvedValue(true),
+        };
+
+        const result = await loadAllClaudeSessions(mockFs);
+
+        // Agent session should have parentID set to main session
+        expect(result.sessions['agent-session'].parentID).toBe('main-session');
+        // Main session should not have parentID
+        expect(result.sessions['main-session'].parentID).toBeUndefined();
+      });
+
+      it('keeps main sessions as roots with no parentID', async () => {
+        const mainJsonl = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Main session"}]}}`;
+
+        const mockFs: VirtualFileSystem = {
+          readFile: vi.fn().mockResolvedValue(mainJsonl),
+          listDirectory: vi.fn().mockImplementation(async (path: string[]) => {
+            if (path.length === 1 && path[0] === 'projects') {
+              return ['-Users-test-project'];
+            }
+            if (path.length === 2 && path[1] === '-Users-test-project') {
+              return ['main-session.jsonl'];
+            }
+            return [];
+          }),
+          exists: vi.fn().mockResolvedValue(true),
+        };
+
+        const result = await loadAllClaudeSessions(mockFs);
+
+        expect(result.sessions['main-session'].parentID).toBeUndefined();
+        // Main session should be at root level in tree
+        expect(result.projects[0].sessions).toHaveLength(1);
+        expect(result.projects[0].sessions[0].session.id).toBe('main-session');
+      });
+
+      it('treats agent session as root when sessionId points to non-existent session', async () => {
+        // Agent with sessionId pointing to non-existent session
+        const agentJsonl = `{"type":"user","sessionId":"non-existent-session","message":{"role":"user","content":[{"type":"text","text":"Orphan agent"}]}}`;
+
+        const mockFs: VirtualFileSystem = {
+          readFile: vi.fn().mockResolvedValue(agentJsonl),
+          listDirectory: vi.fn().mockImplementation(async (path: string[]) => {
+            if (path.length === 1 && path[0] === 'projects') {
+              return ['-Users-test-project'];
+            }
+            if (path.length === 2 && path[1] === '-Users-test-project') {
+              return ['orphan-agent.jsonl'];
+            }
+            return [];
+          }),
+          exists: vi.fn().mockResolvedValue(true),
+        };
+
+        const result = await loadAllClaudeSessions(mockFs);
+
+        // Should not have parentID since parent doesn't exist
+        expect(result.sessions['orphan-agent'].parentID).toBeUndefined();
+        // Should still be in tree as root
+        expect(result.projects[0].sessions).toHaveLength(1);
+      });
+
+      it('nests agent sessions under main session in tree structure', async () => {
+        const mainJsonl = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Main"}]}}`;
+        const agent1Jsonl = `{"type":"user","sessionId":"main-session","message":{"role":"user","content":[{"type":"text","text":"Agent 1"}]}}`;
+        const agent2Jsonl = `{"type":"user","sessionId":"main-session","message":{"role":"user","content":[{"type":"text","text":"Agent 2"}]}}`;
+
+        const mockFs: VirtualFileSystem = {
+          readFile: vi.fn().mockImplementation(async (path: string[]) => {
+            const filename = path[path.length - 1];
+            if (filename === 'main-session.jsonl') return mainJsonl;
+            if (filename === 'agent1.jsonl') return agent1Jsonl;
+            if (filename === 'agent2.jsonl') return agent2Jsonl;
+            return null;
+          }),
+          listDirectory: vi.fn().mockImplementation(async (path: string[]) => {
+            if (path.length === 1 && path[0] === 'projects') {
+              return ['-Users-test-project'];
+            }
+            if (path.length === 2 && path[1] === '-Users-test-project') {
+              return ['main-session.jsonl', 'agent1.jsonl', 'agent2.jsonl'];
+            }
+            return [];
+          }),
+          exists: vi.fn().mockResolvedValue(true),
+        };
+
+        const result = await loadAllClaudeSessions(mockFs);
+
+        // Tree should have main at root with two children
+        expect(result.projects[0].sessions).toHaveLength(1);
+        const mainNode = result.projects[0].sessions[0];
+        expect(mainNode.session.id).toBe('main-session');
+        expect(mainNode.children).toHaveLength(2);
+
+        const childIds = mainNode.children.map(c => c.session.id).sort();
+        expect(childIds).toEqual(['agent1', 'agent2']);
+      });
+
+      it('handles multiple main sessions each with their own agents', async () => {
+        const main1Jsonl = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Main 1"}]}}`;
+        const main2Jsonl = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Main 2"}]}}`;
+        const agent1Jsonl = `{"type":"user","sessionId":"main1","message":{"role":"user","content":[{"type":"text","text":"Agent for main1"}]}}`;
+        const agent2Jsonl = `{"type":"user","sessionId":"main2","message":{"role":"user","content":[{"type":"text","text":"Agent for main2"}]}}`;
+
+        const mockFs: VirtualFileSystem = {
+          readFile: vi.fn().mockImplementation(async (path: string[]) => {
+            const filename = path[path.length - 1];
+            if (filename === 'main1.jsonl') return main1Jsonl;
+            if (filename === 'main2.jsonl') return main2Jsonl;
+            if (filename === 'agent1.jsonl') return agent1Jsonl;
+            if (filename === 'agent2.jsonl') return agent2Jsonl;
+            return null;
+          }),
+          listDirectory: vi.fn().mockImplementation(async (path: string[]) => {
+            if (path.length === 1 && path[0] === 'projects') {
+              return ['-Users-test-project'];
+            }
+            if (path.length === 2 && path[1] === '-Users-test-project') {
+              return ['main1.jsonl', 'main2.jsonl', 'agent1.jsonl', 'agent2.jsonl'];
+            }
+            return [];
+          }),
+          exists: vi.fn().mockResolvedValue(true),
+        };
+
+        const result = await loadAllClaudeSessions(mockFs);
+
+        // Should have 2 root sessions
+        expect(result.projects[0].sessions).toHaveLength(2);
+
+        // Each main should have its own agent child
+        const main1Node = result.projects[0].sessions.find(n => n.session.id === 'main1');
+        const main2Node = result.projects[0].sessions.find(n => n.session.id === 'main2');
+
+        expect(main1Node).toBeDefined();
+        expect(main2Node).toBeDefined();
+        expect(main1Node!.children).toHaveLength(1);
+        expect(main2Node!.children).toHaveLength(1);
+        expect(main1Node!.children[0].session.id).toBe('agent1');
+        expect(main2Node!.children[0].session.id).toBe('agent2');
+      });
     });
   });
 
