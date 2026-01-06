@@ -14,6 +14,69 @@ interface ToolPartProps {
   part: ToolPartType;
 }
 
+type ToolStyleType = 'task' | 'skill' | 'default';
+
+/**
+ * Returns the style type for a tool based on its name.
+ */
+function getToolStyleType(toolName: string): ToolStyleType {
+  switch (toolName) {
+    case 'task':
+      return 'task';
+    case 'skill':
+      return 'skill';
+    default:
+      return 'default';
+  }
+}
+
+/**
+ * Returns color classes for the tool based on its style type.
+ */
+function getToolColors(styleType: ToolStyleType) {
+  switch (styleType) {
+    case 'task':
+      return {
+        bg: 'bg-amber-50 dark:bg-amber-900/20',
+        border: 'border border-amber-200 dark:border-amber-700',
+        hoverBg: 'hover:bg-amber-100 dark:hover:bg-amber-900/30',
+        chevron: 'text-amber-400 dark:text-amber-500',
+        icon: 'text-amber-500 dark:text-amber-400',
+        text: 'text-amber-700 dark:text-amber-300',
+        titleText: 'text-amber-600 dark:text-amber-400',
+        label: 'text-amber-500 dark:text-amber-400',
+        preBg: 'bg-amber-100 dark:bg-amber-800/30',
+        preText: 'text-amber-800 dark:text-amber-200',
+      };
+    case 'skill':
+      return {
+        bg: 'bg-teal-50 dark:bg-teal-900/20',
+        border: 'border border-teal-200 dark:border-teal-700',
+        hoverBg: 'hover:bg-teal-100 dark:hover:bg-teal-900/30',
+        chevron: 'text-teal-400 dark:text-teal-500',
+        icon: 'text-teal-500 dark:text-teal-400',
+        text: 'text-teal-700 dark:text-teal-300',
+        titleText: 'text-teal-600 dark:text-teal-400',
+        label: 'text-teal-500 dark:text-teal-400',
+        preBg: 'bg-teal-100 dark:bg-teal-800/30',
+        preText: 'text-teal-800 dark:text-teal-200',
+      };
+    default:
+      return {
+        bg: 'bg-gray-100 dark:bg-gray-700',
+        border: '',
+        hoverBg: 'hover:bg-gray-200 dark:hover:bg-gray-600',
+        chevron: 'text-gray-400 dark:text-gray-500',
+        icon: 'text-gray-500 dark:text-gray-400',
+        text: 'text-gray-700 dark:text-gray-300',
+        titleText: 'text-gray-500 dark:text-gray-400',
+        label: 'text-gray-500 dark:text-gray-400',
+        preBg: 'bg-gray-100 dark:bg-gray-700',
+        preText: 'text-gray-800 dark:text-gray-200',
+      };
+  }
+}
+
 function StatusIcon({ status }: { status: string }) {
   switch (status) {
     case 'completed':
@@ -63,7 +126,9 @@ export function ToolPart({ part }: ToolPartProps) {
   const { state } = part;
   const title = isToolCompleted(state) ? state.title : undefined;
   const hasDetails = isToolCompleted(state) || isToolError(state);
-  const isTaskTool = part.tool === 'task';
+  const styleType = getToolStyleType(part.tool);
+  const colors = getToolColors(styleType);
+  const hasSpecialStyling = styleType !== 'default';
 
   // Calculate duration if available
   let duration: number | undefined;
@@ -103,14 +168,9 @@ export function ToolPart({ part }: ToolPartProps) {
         disabled={!hasDetails}
         className={`
           inline-flex items-center gap-2 px-3 py-1.5 rounded-lg
-          ${isTaskTool
-            ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700'
-            : 'bg-gray-100 dark:bg-gray-700'
-          }
+          ${colors.bg} ${colors.border}
           ${hasDetails
-            ? isTaskTool
-              ? 'cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-900/30'
-              : 'cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600'
+            ? `cursor-pointer ${colors.hoverBg}`
             : 'cursor-default'
           }
           transition-colors text-left
@@ -120,7 +180,7 @@ export function ToolPart({ part }: ToolPartProps) {
       >
         {/* Expand/collapse indicator */}
         {hasDetails && (
-          <span className={isTaskTool ? 'text-amber-400 dark:text-amber-500' : 'text-gray-400 dark:text-gray-500'}>
+          <span className={colors.chevron}>
             {isExpanded ? (
               <ChevronDown className="w-4 h-4" />
             ) : (
@@ -130,18 +190,18 @@ export function ToolPart({ part }: ToolPartProps) {
         )}
 
         {/* Tool icon */}
-        <span className={isTaskTool ? 'text-amber-500 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}>
+        <span className={colors.icon}>
           <ToolIcon toolName={part.tool} className="w-4 h-4" />
         </span>
 
         {/* Tool name */}
-        <span className={`font-mono text-sm ${isTaskTool ? 'text-amber-700 dark:text-amber-300' : 'text-gray-700 dark:text-gray-300'}`}>
+        <span className={`font-mono text-sm ${colors.text}`}>
           {part.tool}
         </span>
 
         {/* Title (if available) */}
         {title && (
-          <span className={`text-sm truncate max-w-[300px] ${isTaskTool ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}`}>
+          <span className={`text-sm truncate max-w-[300px] ${colors.titleText}`}>
             <HighlightedText text={title} query={searchQuery} />
           </span>
         )}
@@ -153,22 +213,16 @@ export function ToolPart({ part }: ToolPartProps) {
       {/* Expanded details */}
       {isExpanded && hasDetails && (
         <div className={`mt-2 ml-6 p-4 rounded-lg text-sm ${
-          isTaskTool
-            ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700'
+          hasSpecialStyling
+            ? `${colors.bg} ${colors.border}`
             : 'bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700'
         }`}>
           {/* Input section */}
           <div className="mb-4">
-            <div className={`text-xs font-semibold uppercase mb-1 ${
-              isTaskTool ? 'text-amber-500 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'
-            }`}>
+            <div className={`text-xs font-semibold uppercase mb-1 ${colors.label}`}>
               Input
             </div>
-            <pre className={`p-3 rounded overflow-x-auto text-xs font-mono max-h-48 overflow-y-auto ${
-              isTaskTool
-                ? 'bg-amber-100 dark:bg-amber-800/30 text-amber-800 dark:text-amber-200'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
-            }`}>
+            <pre className={`p-3 rounded overflow-x-auto text-xs font-mono max-h-48 overflow-y-auto ${colors.preBg} ${colors.preText}`}>
               {formatInput(state.input)}
             </pre>
           </div>
@@ -176,16 +230,10 @@ export function ToolPart({ part }: ToolPartProps) {
           {/* Output section (for completed) */}
           {isToolCompleted(state) && state.output && (
             <div className="mb-4">
-              <div className={`text-xs font-semibold uppercase mb-1 ${
-                isTaskTool ? 'text-amber-500 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'
-              }`}>
+              <div className={`text-xs font-semibold uppercase mb-1 ${colors.label}`}>
                 Output
               </div>
-              <pre className={`p-3 rounded overflow-x-auto text-xs font-mono max-h-64 overflow-y-auto whitespace-pre-wrap ${
-                isTaskTool
-                  ? 'bg-amber-100 dark:bg-amber-800/30 text-amber-800 dark:text-amber-200'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
-              }`}>
+              <pre className={`p-3 rounded overflow-x-auto text-xs font-mono max-h-64 overflow-y-auto whitespace-pre-wrap ${colors.preBg} ${colors.preText}`}>
                 <HighlightedText text={state.output} query={searchQuery} />
               </pre>
             </div>
@@ -205,9 +253,7 @@ export function ToolPart({ part }: ToolPartProps) {
 
           {/* Duration */}
           {duration !== undefined && (
-            <div className={`flex items-center gap-1 text-xs ${
-              isTaskTool ? 'text-amber-500 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'
-            }`}>
+            <div className={`flex items-center gap-1 text-xs ${colors.label}`}>
               <Clock className="w-3 h-3" />
               <span>Duration: {formatDurationCompact(duration)}</span>
             </div>

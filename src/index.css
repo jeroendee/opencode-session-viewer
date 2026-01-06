@@ -40,3 +40,18 @@ html.dark {
   animation: highlight-part-flash 2s ease-out;
   border-radius: 0.5rem;
 }
+
+/* Skill highlight animation for skill navigation (teal color) */
+@keyframes highlight-skill-flash {
+  0% {
+    box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.8);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.highlight-skill {
+  animation: highlight-skill-flash 2s ease-out;
+  border-radius: 0.5rem;
+}
