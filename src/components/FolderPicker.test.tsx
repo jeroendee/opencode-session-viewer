@@ -379,7 +379,7 @@ describe('FolderPicker', () => {
 
       render(<FolderPicker />);
 
-      expect(screen.getByText('~/.claude/projects/')).toBeInTheDocument();
+      expect(screen.getByText('~/.claude')).toBeInTheDocument();
     });
 
     it('shows OpenCode-specific title when opencode is selected', () => {

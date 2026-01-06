@@ -40,7 +40,7 @@ export function FolderPicker() {
     },
     'claude-code': {
       name: 'Claude Code',
-      folderPath: '~/.claude/projects/',
+      folderPath: '~/.claude',
     },
   };
 
