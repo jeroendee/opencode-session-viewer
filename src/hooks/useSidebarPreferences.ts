@@ -5,6 +5,7 @@ export type GroupingMode = 'directory' | 'date'
 export interface SidebarPreferences {
   width: number
   groupingMode: GroupingMode
+  selectedDirectory: string | null
 }
 
 const STORAGE_KEY = 'sidebar-preferences'
@@ -14,7 +15,7 @@ const MAX_WIDTH = 500
 
 function getStoredPreferences(): SidebarPreferences {
   if (typeof window === 'undefined') {
-    return { width: DEFAULT_WIDTH, groupingMode: 'directory' }
+    return { width: DEFAULT_WIDTH, groupingMode: 'directory', selectedDirectory: null }
   }
   
   try {
@@ -26,13 +27,14 @@ function getStoredPreferences(): SidebarPreferences {
           ? Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, parsed.width))
           : DEFAULT_WIDTH,
         groupingMode: parsed.groupingMode === 'date' ? 'date' : 'directory',
+        selectedDirectory: typeof parsed.selectedDirectory === 'string' ? parsed.selectedDirectory : null,
       }
     }
   } catch {
     // Invalid JSON, use defaults
   }
   
-  return { width: DEFAULT_WIDTH, groupingMode: 'directory' }
+  return { width: DEFAULT_WIDTH, groupingMode: 'directory', selectedDirectory: null }
 }
 
 function savePreferences(prefs: SidebarPreferences): void {
@@ -60,11 +62,21 @@ export function useSidebarPreferences() {
     })
   }, [])
 
+  const setSelectedDirectory = useCallback((directory: string | null) => {
+    setPreferencesState(prev => {
+      const next = { ...prev, selectedDirectory: directory }
+      savePreferences(next)
+      return next
+    })
+  }, [])
+
   return {
     width: preferences.width,
     groupingMode: preferences.groupingMode,
+    selectedDirectory: preferences.selectedDirectory,
     setWidth,
     setGroupingMode,
+    setSelectedDirectory,
     minWidth: MIN_WIDTH,
     maxWidth: MAX_WIDTH,
   }

@@ -161,8 +161,8 @@ describe('SessionBrowser', () => {
     it('renders session count badges for each project', () => {
       render(<SessionBrowser sidebarOpen={true} />);
 
-      // opencode has 2 root sessions (child sessions are nested, not counted at top level)
-      expect(screen.getByText('2')).toBeInTheDocument();
+      // opencode has 3 sessions total (2 root + 1 nested child)
+      expect(screen.getByText('3')).toBeInTheDocument();
       // other-project has 1 session
       expect(screen.getByText('1')).toBeInTheDocument();
     });
@@ -640,6 +640,135 @@ describe('SessionBrowser', () => {
 
       expect(title).toContain('Untitled Session');
       expect(title).toContain('ID: session-untitled');
+    });
+  });
+
+  describe('directory filter dropdown', () => {
+    it('renders the directory filter dropdown', () => {
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      expect(screen.getByRole('button', { name: 'Filter by directory' })).toBeInTheDocument();
+    });
+
+    it('shows "All directories" by default', () => {
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      // The button text shows "All directories"
+      expect(screen.getByText('All directories')).toBeInTheDocument();
+    });
+
+    it('shows total session count when "All directories" is selected', () => {
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      // Total sessions: opencode has 3 (2 root + 1 child), other-project has 1 = 4
+      expect(screen.getByText('4')).toBeInTheDocument();
+    });
+
+    it('filters to show only sessions from selected directory', () => {
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      // Initially both directories are shown (collapsed) - check expand buttons
+      expect(screen.getByRole('button', { name: /Expand opencode/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Expand other-project/i })).toBeInTheDocument();
+
+      // Open the filter dropdown
+      fireEvent.click(screen.getByRole('button', { name: 'Filter by directory' }));
+
+      // Select opencode
+      fireEvent.click(screen.getByRole('option', { name: /opencode/ }));
+
+      // Now only opencode should be visible in directory list
+      expect(screen.getByRole('button', { name: /Expand opencode/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Expand other-project/i })).not.toBeInTheDocument();
+    });
+
+    it('applies directory filter before search in directory mode', async () => {
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      // Filter to opencode only
+      fireEvent.click(screen.getByRole('button', { name: 'Filter by directory' }));
+      fireEvent.click(screen.getByRole('option', { name: /opencode/ }));
+
+      // Search for something that exists in other-project
+      const searchInput = screen.getByPlaceholderText('Search sessions...');
+      fireEvent.change(searchInput, { target: { value: 'Refactor' } });
+
+      // Wait for search - should show no results because other-project is filtered out
+      await waitFor(() => {
+        expect(screen.getByText('No matching sessions')).toBeInTheDocument();
+      });
+    });
+
+    it('applies directory filter before search in date mode', async () => {
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      // Switch to date grouping
+      const dateButton = screen.getByRole('button', { name: 'Date' });
+      fireEvent.click(dateButton);
+
+      // Filter to other-project only
+      fireEvent.click(screen.getByRole('button', { name: 'Filter by directory' }));
+      fireEvent.click(screen.getByRole('option', { name: /other-project/ }));
+
+      // Search for something in opencode
+      const searchInput = screen.getByPlaceholderText('Search sessions...');
+      fireEvent.change(searchInput, { target: { value: 'feature' } });
+
+      // Should show no results because opencode is filtered out
+      await waitFor(() => {
+        expect(screen.getByText('No matching sessions')).toBeInTheDocument();
+      });
+    });
+
+    it('can clear directory filter by selecting "All directories"', async () => {
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      // Filter to opencode
+      fireEvent.click(screen.getByRole('button', { name: 'Filter by directory' }));
+      fireEvent.click(screen.getByRole('option', { name: /opencode/ }));
+
+      // Only opencode visible in the directory list (not other-project)
+      // There's one in the filter dropdown and one in the directory list
+      expect(screen.queryByRole('button', { name: /Expand other-project/i })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Expand opencode/i })).toBeInTheDocument();
+
+      // Clear filter
+      fireEvent.click(screen.getByRole('button', { name: 'Filter by directory' }));
+      fireEvent.click(screen.getByRole('option', { name: /All directories/ }));
+
+      // Both directories visible again in the directory list
+      expect(screen.getByRole('button', { name: /Expand opencode/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Expand other-project/i })).toBeInTheDocument();
+    });
+
+    it('persists directory filter selection', () => {
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      // Filter to opencode
+      fireEvent.click(screen.getByRole('button', { name: 'Filter by directory' }));
+      fireEvent.click(screen.getByRole('option', { name: /opencode/ }));
+
+      // Check localStorage was updated
+      expect(localStorageMock.setItem).toHaveBeenCalledWith(
+        'sidebar-preferences',
+        expect.stringContaining('/Users/test/projects/opencode')
+      );
+    });
+
+    it('shows sessions from selected directory when expanded', () => {
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      // Filter to opencode
+      fireEvent.click(screen.getByRole('button', { name: 'Filter by directory' }));
+      fireEvent.click(screen.getByRole('option', { name: /opencode/ }));
+
+      // Expand the directory
+      const opencodeButton = screen.getByRole('button', { name: /Expand opencode/i });
+      fireEvent.click(opencodeButton);
+
+      // Sessions from opencode are visible
+      expect(screen.getByText('Implement feature X')).toBeInTheDocument();
+      expect(screen.getByText('Fix bug Y')).toBeInTheDocument();
     });
   });
 });

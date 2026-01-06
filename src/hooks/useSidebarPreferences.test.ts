@@ -34,6 +34,7 @@ describe('useSidebarPreferences', () => {
 
     expect(result.current.width).toBe(288);
     expect(result.current.groupingMode).toBe('directory');
+    expect(result.current.selectedDirectory).toBe(null);
     expect(result.current.minWidth).toBe(200);
     expect(result.current.maxWidth).toBe(500);
   });
@@ -150,5 +151,89 @@ describe('useSidebarPreferences', () => {
     const { result } = renderHook(() => useSidebarPreferences());
 
     expect(result.current.groupingMode).toBe('directory');
+  });
+
+  describe('selectedDirectory', () => {
+    it('returns null when no selectedDirectory is stored', () => {
+      const { result } = renderHook(() => useSidebarPreferences());
+
+      expect(result.current.selectedDirectory).toBe(null);
+    });
+
+    it('loads stored selectedDirectory from localStorage', () => {
+      localStorageMock.setItem('sidebar-preferences', JSON.stringify({
+        width: 288,
+        groupingMode: 'directory',
+        selectedDirectory: '/Users/test/projects/myapp',
+      }));
+
+      const { result } = renderHook(() => useSidebarPreferences());
+
+      expect(result.current.selectedDirectory).toBe('/Users/test/projects/myapp');
+    });
+
+    it('setSelectedDirectory updates value and saves to localStorage', () => {
+      const { result } = renderHook(() => useSidebarPreferences());
+
+      act(() => {
+        result.current.setSelectedDirectory('/Users/test/projects/newdir');
+      });
+
+      expect(result.current.selectedDirectory).toBe('/Users/test/projects/newdir');
+      expect(localStorageMock.setItem).toHaveBeenCalledWith(
+        'sidebar-preferences',
+        expect.stringContaining('"/Users/test/projects/newdir"')
+      );
+    });
+
+    it('setSelectedDirectory can set to null', () => {
+      localStorageMock.setItem('sidebar-preferences', JSON.stringify({
+        width: 288,
+        groupingMode: 'directory',
+        selectedDirectory: '/Users/test/projects/myapp',
+      }));
+
+      const { result } = renderHook(() => useSidebarPreferences());
+
+      expect(result.current.selectedDirectory).toBe('/Users/test/projects/myapp');
+
+      act(() => {
+        result.current.setSelectedDirectory(null);
+      });
+
+      expect(result.current.selectedDirectory).toBe(null);
+    });
+
+    it('preserves other preferences when updating selectedDirectory', () => {
+      const { result } = renderHook(() => useSidebarPreferences());
+
+      act(() => {
+        result.current.setWidth(350);
+      });
+
+      act(() => {
+        result.current.setGroupingMode('date');
+      });
+
+      act(() => {
+        result.current.setSelectedDirectory('/Users/test/mydir');
+      });
+
+      expect(result.current.width).toBe(350);
+      expect(result.current.groupingMode).toBe('date');
+      expect(result.current.selectedDirectory).toBe('/Users/test/mydir');
+    });
+
+    it('defaults non-string selectedDirectory to null', () => {
+      localStorageMock.setItem('sidebar-preferences', JSON.stringify({
+        width: 300,
+        groupingMode: 'directory',
+        selectedDirectory: 123, // Invalid type
+      }));
+
+      const { result } = renderHook(() => useSidebarPreferences());
+
+      expect(result.current.selectedDirectory).toBe(null);
+    });
   });
 });

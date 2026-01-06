@@ -6,6 +6,7 @@ import { useSidebarPreferences, type GroupingMode } from '../hooks/useSidebarPre
 import { useSessionSearch } from '../hooks/useSessionSearch';
 import { LoadingSpinner } from './LoadingSpinner';
 import { buildSessionTooltip } from '../utils/formatters';
+import { DirectoryFilterDropdown, type DirectoryOption } from './DirectoryFilterDropdown';
 
 interface SessionBrowserProps {
   sidebarOpen: boolean;
@@ -18,6 +19,13 @@ interface SessionBrowserProps {
 function getDirectoryName(path: string): string {
   const segments = path.split('/').filter(Boolean);
   return segments[segments.length - 1] || path;
+}
+
+/**
+ * Counts all sessions in a tree, including nested children.
+ */
+function countSessions(nodes: SessionNode[]): number {
+  return nodes.reduce((sum, node) => sum + 1 + countSessions(node.children), 0);
 }
 
 /**
@@ -132,7 +140,7 @@ function DirectoryGroupComponent({
         <FolderOpen className="w-4 h-4 text-gray-500 flex-shrink-0" />
         <span className="flex-1 truncate text-left" title={group.directory}>{directoryName}</span>
         <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-200 dark:bg-gray-600 px-1.5 py-0.5 rounded-full tabular-nums">
-          {group.sessions.length}
+          {countSessions(group.sessions)}
         </span>
       </button>
       {isExpanded && group.sessions.length > 0 && (
@@ -440,7 +448,7 @@ function GroupingModeSelector({
  */
 export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserProps) {
   const { projects, selectedSessionId, selectSession, clearFolder, isLoadingFolder, allSessions } = useSessionStore();
-  const { width, groupingMode, setWidth, setGroupingMode, minWidth, maxWidth } = useSidebarPreferences();
+  const { width, groupingMode, selectedDirectory, setWidth, setGroupingMode, setSelectedDirectory, minWidth, maxWidth } = useSidebarPreferences();
   const [currentWidth, setCurrentWidth] = useState(width);
   
   // Session search
@@ -462,6 +470,75 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
     return groupSessionsByDate(projects);
   }, [projects]);
 
+  // Build directory options for the filter dropdown
+  const directoryOptions = useMemo((): DirectoryOption[] => {
+    return directoryGroups.map((group) => ({
+      path: group.directory,
+      name: getDirectoryName(group.directory),
+      sessionCount: countSessions(group.sessions),
+    }));
+  }, [directoryGroups]);
+
+  // Clear selected directory if it no longer exists
+  useEffect(() => {
+    if (selectedDirectory && !directoryOptions.some((d) => d.path === selectedDirectory)) {
+      setSelectedDirectory(null);
+    }
+  }, [directoryOptions, selectedDirectory, setSelectedDirectory]);
+
+  // Helper to check if a session node is from the selected directory
+  const isFromSelectedDirectory = useCallback((node: SessionNode): boolean => {
+    if (!selectedDirectory) return true;
+    return node.session.directory === selectedDirectory;
+  }, [selectedDirectory]);
+
+  // Helper to filter nodes by directory (keeps node if it or any descendant matches)
+  const filterNodesByDirectory = useCallback((nodes: SessionNode[]): SessionNode[] => {
+    if (!selectedDirectory) return nodes;
+    
+    return nodes
+      .map((node) => {
+        const matchingChildren = filterNodesByDirectory(node.children);
+        if (isFromSelectedDirectory(node) || matchingChildren.length > 0) {
+          return { ...node, children: matchingChildren };
+        }
+        return null;
+      })
+      .filter((node): node is SessionNode => node !== null);
+  }, [selectedDirectory, isFromSelectedDirectory]);
+
+  // Apply directory filter to directory groups
+  const directoryFilteredGroups = useMemo(() => {
+    if (!selectedDirectory) return directoryGroups;
+    return directoryGroups
+      .filter((group) => group.directory === selectedDirectory)
+      .map((group) => ({
+        ...group,
+        sessions: filterNodesByDirectory(group.sessions),
+      }));
+  }, [directoryGroups, selectedDirectory, filterNodesByDirectory]);
+
+  // Apply directory filter to date groups
+  const directoryFilteredDateGroups = useMemo(() => {
+    if (!selectedDirectory) return dateGroups;
+    return dateGroups
+      .map((yearGroup) => ({
+        ...yearGroup,
+        months: yearGroup.months
+          .map((monthGroup) => ({
+            ...monthGroup,
+            days: monthGroup.days
+              .map((dayGroup) => ({
+                ...dayGroup,
+                sessions: filterNodesByDirectory(dayGroup.sessions),
+              }))
+              .filter((dayGroup) => dayGroup.sessions.length > 0),
+          }))
+          .filter((monthGroup) => monthGroup.days.length > 0),
+      }))
+      .filter((yearGroup) => yearGroup.months.length > 0);
+  }, [dateGroups, selectedDirectory, filterNodesByDirectory]);
+
   // Helper to filter a node tree, keeping nodes that match or have matching descendants
   const filterNodeTree = useCallback((node: SessionNode, ids: Set<string>): SessionNode | null => {
     const matchingChildren = node.children
@@ -474,10 +551,10 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
     return null;
   }, []);
 
-  // Filtered groups when searching
+  // Filtered groups when searching (applied AFTER directory filter)
   const filteredDirectoryGroups = useMemo(() => {
-    if (!matchingSessionIds) return directoryGroups;
-    return directoryGroups
+    if (!matchingSessionIds) return directoryFilteredGroups;
+    return directoryFilteredGroups
       .map((group) => ({
         ...group,
         sessions: group.sessions
@@ -485,11 +562,11 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
           .filter((node): node is SessionNode => node !== null),
       }))
       .filter((group) => group.sessions.length > 0);
-  }, [directoryGroups, matchingSessionIds, filterNodeTree]);
+  }, [directoryFilteredGroups, matchingSessionIds, filterNodeTree]);
 
   const filteredDateGroups = useMemo(() => {
-    if (!matchingSessionIds) return dateGroups;
-    return dateGroups
+    if (!matchingSessionIds) return directoryFilteredDateGroups;
+    return directoryFilteredDateGroups
       .map((yearGroup) => ({
         ...yearGroup,
         months: yearGroup.months
@@ -507,7 +584,7 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
           .filter((monthGroup) => monthGroup.days.length > 0),
       }))
       .filter((yearGroup) => yearGroup.months.length > 0);
-  }, [dateGroups, matchingSessionIds, filterNodeTree]);
+  }, [directoryFilteredDateGroups, matchingSessionIds, filterNodeTree]);
 
   // Pre-compute all month/day keys for auto-expanding during search
   const { allMonthKeys, allDayKeys } = useMemo(() => {
@@ -681,7 +758,7 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
         <ResizeHandle onResize={handleResize} onResizeEnd={handleResizeEnd} />
       )}
 
-      {/* Search bar and grouping mode */}
+      {/* Search bar, directory filter, and grouping mode */}
       <div className="p-4 border-b border-gray-200 dark:border-gray-700 space-y-3">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -703,6 +780,11 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
             </button>
           )}
         </div>
+        <DirectoryFilterDropdown
+          directories={directoryOptions}
+          selected={selectedDirectory}
+          onChange={setSelectedDirectory}
+        />
         <GroupingModeSelector mode={groupingMode} onChange={setGroupingMode} />
       </div>
 
