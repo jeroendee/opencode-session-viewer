@@ -63,6 +63,7 @@ export function ToolPart({ part }: ToolPartProps) {
   const { state } = part;
   const title = isToolCompleted(state) ? state.title : undefined;
   const hasDetails = isToolCompleted(state) || isToolError(state);
+  const isTaskTool = part.tool === 'task';
 
   // Calculate duration if available
   let duration: number | undefined;
@@ -102,8 +103,16 @@ export function ToolPart({ part }: ToolPartProps) {
         disabled={!hasDetails}
         className={`
           inline-flex items-center gap-2 px-3 py-1.5 rounded-lg
-          bg-gray-100 dark:bg-gray-700
-          ${hasDetails ? 'cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600' : 'cursor-default'}
+          ${isTaskTool
+            ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700'
+            : 'bg-gray-100 dark:bg-gray-700'
+          }
+          ${hasDetails
+            ? isTaskTool
+              ? 'cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-900/30'
+              : 'cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600'
+            : 'cursor-default'
+          }
           transition-colors text-left
         `}
         aria-expanded={hasDetails ? isExpanded : undefined}
@@ -111,7 +120,7 @@ export function ToolPart({ part }: ToolPartProps) {
       >
         {/* Expand/collapse indicator */}
         {hasDetails && (
-          <span className="text-gray-400 dark:text-gray-500">
+          <span className={isTaskTool ? 'text-amber-400 dark:text-amber-500' : 'text-gray-400 dark:text-gray-500'}>
             {isExpanded ? (
               <ChevronDown className="w-4 h-4" />
             ) : (
@@ -121,18 +130,18 @@ export function ToolPart({ part }: ToolPartProps) {
         )}
 
         {/* Tool icon */}
-        <span className="text-gray-500 dark:text-gray-400">
+        <span className={isTaskTool ? 'text-amber-500 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}>
           <ToolIcon toolName={part.tool} className="w-4 h-4" />
         </span>
 
         {/* Tool name */}
-        <span className="font-mono text-sm text-gray-700 dark:text-gray-300">
+        <span className={`font-mono text-sm ${isTaskTool ? 'text-amber-700 dark:text-amber-300' : 'text-gray-700 dark:text-gray-300'}`}>
           {part.tool}
         </span>
 
         {/* Title (if available) */}
         {title && (
-          <span className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-[300px]">
+          <span className={`text-sm truncate max-w-[300px] ${isTaskTool ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}`}>
             <HighlightedText text={title} query={searchQuery} />
           </span>
         )}
@@ -143,13 +152,23 @@ export function ToolPart({ part }: ToolPartProps) {
 
       {/* Expanded details */}
       {isExpanded && hasDetails && (
-        <div className="mt-2 ml-6 p-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm">
+        <div className={`mt-2 ml-6 p-4 rounded-lg text-sm ${
+          isTaskTool
+            ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700'
+            : 'bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700'
+        }`}>
           {/* Input section */}
           <div className="mb-4">
-            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+            <div className={`text-xs font-semibold uppercase mb-1 ${
+              isTaskTool ? 'text-amber-500 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'
+            }`}>
               Input
             </div>
-            <pre className="bg-gray-100 dark:bg-gray-700 p-3 rounded overflow-x-auto text-xs font-mono text-gray-800 dark:text-gray-200 max-h-48 overflow-y-auto">
+            <pre className={`p-3 rounded overflow-x-auto text-xs font-mono max-h-48 overflow-y-auto ${
+              isTaskTool
+                ? 'bg-amber-100 dark:bg-amber-800/30 text-amber-800 dark:text-amber-200'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+            }`}>
               {formatInput(state.input)}
             </pre>
           </div>
@@ -157,10 +176,16 @@ export function ToolPart({ part }: ToolPartProps) {
           {/* Output section (for completed) */}
           {isToolCompleted(state) && state.output && (
             <div className="mb-4">
-              <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+              <div className={`text-xs font-semibold uppercase mb-1 ${
+                isTaskTool ? 'text-amber-500 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'
+              }`}>
                 Output
               </div>
-              <pre className="bg-gray-100 dark:bg-gray-700 p-3 rounded overflow-x-auto text-xs font-mono text-gray-800 dark:text-gray-200 max-h-64 overflow-y-auto whitespace-pre-wrap">
+              <pre className={`p-3 rounded overflow-x-auto text-xs font-mono max-h-64 overflow-y-auto whitespace-pre-wrap ${
+                isTaskTool
+                  ? 'bg-amber-100 dark:bg-amber-800/30 text-amber-800 dark:text-amber-200'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+              }`}>
                 <HighlightedText text={state.output} query={searchQuery} />
               </pre>
             </div>
@@ -180,7 +205,9 @@ export function ToolPart({ part }: ToolPartProps) {
 
           {/* Duration */}
           {duration !== undefined && (
-            <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+            <div className={`flex items-center gap-1 text-xs ${
+              isTaskTool ? 'text-amber-500 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'
+            }`}>
               <Clock className="w-3 h-3" />
               <span>Duration: {formatDurationCompact(duration)}</span>
             </div>
