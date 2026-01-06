@@ -32,7 +32,17 @@ export function extractSessionInfoFromClaude(
   let title = sessionId;
   for (const entry of entries) {
     if (entry.type === 'user') {
-      const textBlock = entry.message.content.find((b) => b.type === 'text');
+      const content = entry.message.content;
+      // Handle string content directly
+      if (typeof content === 'string') {
+        title = content;
+        if (title.length > MAX_TITLE_LENGTH) {
+          title = title.slice(0, MAX_TITLE_LENGTH - 3) + '...';
+        }
+        break;
+      }
+      // Handle array content - find text block
+      const textBlock = content.find((b) => b.type === 'text');
       if (textBlock && textBlock.type === 'text') {
         title = textBlock.text;
         if (title.length > MAX_TITLE_LENGTH) {

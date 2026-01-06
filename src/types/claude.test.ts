@@ -27,6 +27,20 @@ describe('Claude TypeScript Types', () => {
       expect(userMessage.message.content).toHaveLength(1);
     });
 
+    it('accepts user message with string content', () => {
+      const userMessage: ClaudeUserMessage = {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: 'Hello, this is a simple string message',
+        },
+      };
+
+      expect(userMessage.type).toBe('user');
+      expect(userMessage.message.role).toBe('user');
+      expect(userMessage.message.content).toBe('Hello, this is a simple string message');
+    });
+
     it('accepts user message with tool_result content', () => {
       const toolResult: ClaudeToolResult = {
         type: 'tool_result',
@@ -42,7 +56,11 @@ describe('Claude TypeScript Types', () => {
         },
       };
 
-      expect(userMessage.message.content[0].type).toBe('tool_result');
+      const content = userMessage.message.content;
+      expect(Array.isArray(content)).toBe(true);
+      if (Array.isArray(content)) {
+        expect(content[0].type).toBe('tool_result');
+      }
     });
   });
 

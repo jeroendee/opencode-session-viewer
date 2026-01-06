@@ -51,7 +51,7 @@ export interface ClaudeUserMessage {
   type: 'user';
   message: {
     role: 'user';
-    content: ClaudeContentBlock[];
+    content: string | ClaudeContentBlock[];
   };
 }
 

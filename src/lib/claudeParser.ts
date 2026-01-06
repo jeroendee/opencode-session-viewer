@@ -108,13 +108,26 @@ export function convertToSession(
     const messageId = `${sessionId}-msg-${index}`;
     const parts: Part[] = [];
 
-    for (const block of entry.message.content) {
-      const part = convertContentBlockToPart(block, sessionId, messageId);
-      if (part) {
-        parts.push(part);
-        // Track tool_use parts for linking
-        if (part.type === 'tool' && 'callID' in part) {
-          toolPartsMap.set(part.callID, part as ToolPart);
+    // Handle string content (simple user messages)
+    const content = entry.message.content;
+    if (typeof content === 'string') {
+      const textPart: TextPart = {
+        id: crypto.randomUUID(),
+        sessionID: sessionId,
+        messageID: messageId,
+        type: 'text',
+        text: content,
+      };
+      parts.push(textPart);
+    } else {
+      for (const block of content) {
+        const part = convertContentBlockToPart(block, sessionId, messageId);
+        if (part) {
+          parts.push(part);
+          // Track tool_use parts for linking
+          if (part.type === 'tool' && 'callID' in part) {
+            toolPartsMap.set(part.callID, part as ToolPart);
+          }
         }
       }
     }
@@ -162,20 +175,24 @@ export function convertToSession(
 
   // Second pass: link tool_results to tool_use parts
   for (const entry of entries) {
-    for (const block of entry.message.content) {
+    const content = entry.message.content;
+    // Skip string content - no tool_results in simple messages
+    if (typeof content === 'string') continue;
+
+    for (const block of content) {
       if (block.type === 'tool_result') {
         const toolPart = toolPartsMap.get(block.tool_use_id);
         if (toolPart) {
-          const content = extractToolResultContent(block);
+          const resultContent = extractToolResultContent(block);
           if (block.is_error) {
             toolPart.state = {
               status: 'error',
               input: (toolPart.state as ToolPartCompleted).input,
-              error: content,
+              error: resultContent,
               time: { start: Date.now(), end: Date.now() },
             } as ToolPartError;
           } else {
-            (toolPart.state as ToolPartCompleted).output = content;
+            (toolPart.state as ToolPartCompleted).output = resultContent;
           }
         }
       }

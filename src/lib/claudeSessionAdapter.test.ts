@@ -64,6 +64,18 @@ describe('claudeSessionAdapter', () => {
 
       expect(info.title).toBe('session-abc');
     });
+
+    it('extracts title from session with string user message', () => {
+      const jsonl = `{"type":"user","message":{"role":"user","content":"My string message"}}`;
+
+      const info = extractSessionInfoFromClaude(
+        jsonl,
+        'session-string',
+        '/Users/test/project'
+      );
+
+      expect(info.title).toBe('My string message');
+    });
   });
 
   describe('listClaudeSessionInfos', () => {

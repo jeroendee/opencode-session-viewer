@@ -106,6 +106,24 @@ describe('claudeParser', () => {
       expect((session.messages[0].parts[0] as { text: string }).text).toBe('Hello world');
     });
 
+    it('converts user message with string content to TextPart', () => {
+      const entries: ClaudeTranscriptEntry[] = [
+        {
+          type: 'user',
+          message: {
+            role: 'user',
+            content: 'some string' as unknown as [],
+          },
+        },
+      ];
+
+      const session = convertToSession(entries, 'test-session-id');
+
+      expect(session.messages[0].parts).toHaveLength(1);
+      expect(session.messages[0].parts[0].type).toBe('text');
+      expect((session.messages[0].parts[0] as { text: string }).text).toBe('some string');
+    });
+
     it('handles tool_use content blocks as ToolPart', () => {
       const entries: ClaudeTranscriptEntry[] = [
         {
