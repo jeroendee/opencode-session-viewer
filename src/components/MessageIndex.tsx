@@ -1,6 +1,8 @@
 import { useCallback } from 'react';
+import { Bot } from 'lucide-react';
 import type { MessageGroup } from '../utils/groupMessages';
 import { getGroupSummary } from '../utils/groupMessages';
+import { extractTasks } from '../utils/extractTasks';
 import { truncate } from '../utils/formatters';
 
 interface MessageIndexProps {
@@ -36,6 +38,7 @@ export function MessageIndex({
           const isActive = messageId === activeMessageId;
           const hasMatch = matchedMessageIds.has(messageId);
           const summary = truncate(getGroupSummary(group), 40);
+          const tasks = extractTasks(group);
 
           return (
             <li key={messageId}>
@@ -83,6 +86,30 @@ export function MessageIndex({
                   )}
                 </div>
               </button>
+
+              {/* Tasks under this message */}
+              {tasks.length > 0 && (
+                <ul className="ml-6 mt-1 space-y-0.5" aria-label="Tasks">
+                  {tasks.map((task) => (
+                    <li key={task.id}>
+                      <button
+                        onClick={() => handleClick(task.messageId)}
+                        className="
+                          flex items-center gap-1.5 px-2 py-0.5 text-xs
+                          text-amber-700 dark:text-amber-400
+                          hover:text-amber-900 dark:hover:text-amber-300
+                          hover:bg-amber-50 dark:hover:bg-amber-900/20
+                          rounded transition-colors w-full text-left
+                        "
+                      >
+                        <Bot className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
+                        <span className="sr-only">Task: </span>
+                        <span className="truncate">{task.agentType}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </li>
           );
         })}
