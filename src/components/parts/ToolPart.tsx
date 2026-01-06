@@ -96,7 +96,7 @@ export function ToolPart({ part }: ToolPartProps) {
 
 
   return (
-    <div className="my-2">
+    <div className="my-2" id={`part-${part.id}`}>
       {/* Collapsed chip / header */}
       <button
         onClick={() => hasDetails && setIsExpanded(!isExpanded)}

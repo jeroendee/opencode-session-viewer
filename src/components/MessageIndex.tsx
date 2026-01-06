@@ -10,6 +10,7 @@ interface MessageIndexProps {
   activeMessageId: string | null;
   matchedMessageIds: Set<string>;
   onMessageClick: (messageId: string) => void;
+  onTaskClick?: (taskId: string, messageId: string) => void;
 }
 
 export function MessageIndex({
@@ -17,10 +18,28 @@ export function MessageIndex({
   activeMessageId,
   matchedMessageIds,
   onMessageClick,
+  onTaskClick,
 }: MessageIndexProps) {
   const handleClick = useCallback((messageId: string) => {
     onMessageClick(messageId);
   }, [onMessageClick]);
+
+  const handleTaskClick = useCallback((taskId: string, messageId: string) => {
+    if (onTaskClick) {
+      onTaskClick(taskId, messageId);
+    } else {
+      // Fallback: scroll to the part element directly
+      const element = document.getElementById(`part-${taskId}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Add highlight animation
+        element.classList.add('highlight-part');
+        setTimeout(() => {
+          element.classList.remove('highlight-part');
+        }, 2000);
+      }
+    }
+  }, [onTaskClick]);
 
   if (groups.length === 0) {
     return (
@@ -93,7 +112,7 @@ export function MessageIndex({
                   {tasks.map((task) => (
                     <li key={task.id}>
                       <button
-                        onClick={() => handleClick(task.messageId)}
+                        onClick={() => handleTaskClick(task.id, task.messageId)}
                         className="
                           flex items-center gap-1.5 px-2 py-0.5 text-xs
                           text-amber-700 dark:text-amber-400

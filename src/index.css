@@ -25,3 +25,18 @@ html.dark {
 .highlight-message {
   animation: highlight-flash 2s ease-out;
 }
+
+/* Part highlight animation for task navigation (amber color) */
+@keyframes highlight-part-flash {
+  0% {
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.8);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.highlight-part {
+  animation: highlight-part-flash 2s ease-out;
+  border-radius: 0.5rem;
+}
