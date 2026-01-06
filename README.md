@@ -1,9 +1,10 @@
 # OpenCode Session Viewer
 
-A web-based viewer for OpenCode exported session JSON files. Browse AI coding sessions with collapsible sections, markdown rendering, syntax highlighting, search, and keyboard navigation.
+A web-based viewer for OpenCode and Claude Code session transcripts. Browse AI coding sessions with collapsible sections, markdown rendering, syntax highlighting, search, and keyboard navigation.
 
 ## Features
 
+- **Multi-Source Support**: Switch between OpenCode and Claude Code transcript sources
 - **Session Loading**: Load sessions from file upload, URL, or paste JSON
 - **Message Browsing**: View user messages and assistant responses in a clean interface
 - **Collapsible Sections**: Expand/collapse assistant responses and individual steps
@@ -17,6 +18,15 @@ A web-based viewer for OpenCode exported session JSON files. Browse AI coding se
 - **Responsive**: Works on desktop, tablet, and mobile
 
 ## Usage
+
+### Select Transcript Source
+
+Before loading sessions, select your transcript source:
+
+1. **OpenCode**: For sessions stored in `~/.local/share/opencode/storage/`
+2. **Claude Code**: For sessions stored in `~/.claude/projects/`
+
+The source selection persists across browser sessions.
 
 ### Load a Session
 
@@ -67,6 +77,7 @@ npm run preview
 src/
 ├── components/          # React components
 │   ├── Header.tsx       # App header with theme toggle
+│   ├── SourceSelector.tsx  # Transcript source toggle (OpenCode/Claude Code)
 │   ├── Sidebar.tsx      # Navigation sidebar
 │   ├── LoadSession.tsx  # Session loading interface
 │   ├── MessageList.tsx  # Main message display

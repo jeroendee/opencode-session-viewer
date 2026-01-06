@@ -19,6 +19,7 @@ const resetStore = () => {
     isLoadingMessages: false,
     loadError: null,
     sidebarOpen: true,
+    transcriptSource: 'opencode',
   });
 };
 
@@ -669,5 +670,70 @@ describe('sessionStore - reactivity', () => {
     const allSessions = useSessionStore.getState().allSessions;
     expect(Object.keys(allSessions).length).toBe(1);
     expect(allSessions['session-1']).toBe(session);
+  });
+});
+
+describe('sessionStore - transcriptSource selection', () => {
+  beforeEach(() => {
+    resetStore();
+  });
+
+  describe('initial state', () => {
+    it('has transcriptSource as opencode by default', () => {
+      expect(useSessionStore.getState().transcriptSource).toBe('opencode');
+    });
+  });
+
+  describe('setTranscriptSource', () => {
+    it('updates source to claude-code', () => {
+      useSessionStore.getState().setTranscriptSource('claude-code');
+      expect(useSessionStore.getState().transcriptSource).toBe('claude-code');
+    });
+
+    it('updates source to opencode', () => {
+      // First set to claude-code
+      useSessionStore.getState().setTranscriptSource('claude-code');
+      expect(useSessionStore.getState().transcriptSource).toBe('claude-code');
+
+      // Then set back to opencode
+      useSessionStore.getState().setTranscriptSource('opencode');
+      expect(useSessionStore.getState().transcriptSource).toBe('opencode');
+    });
+
+    it('persists source selection when other state changes', () => {
+      useSessionStore.getState().setTranscriptSource('claude-code');
+
+      // Change other state
+      useSessionStore.getState().setSidebarOpen(false);
+      useSessionStore.getState().setError('some error');
+
+      // Source should still be claude-code
+      expect(useSessionStore.getState().transcriptSource).toBe('claude-code');
+    });
+  });
+
+  describe('clearFolder does not reset source', () => {
+    it('preserves transcriptSource when clearFolder is called', () => {
+      // Set source to claude-code
+      useSessionStore.getState().setTranscriptSource('claude-code');
+
+      // Set up some folder state
+      const mockFs = createMockFileSystem(new Map());
+      const session = createMockSessionInfo('session-1', 'project-1');
+      const node = createMockSessionNode(session);
+      const project: ProjectInfo = {
+        id: 'project-1',
+        path: '/Users/test/project-1',
+        sessions: [node],
+      };
+      useSessionStore.getState().setFileSystem(mockFs);
+      useSessionStore.getState().setProjects([project]);
+
+      // Clear folder
+      useSessionStore.getState().clearFolder();
+
+      // Source should still be claude-code (user preference preserved)
+      expect(useSessionStore.getState().transcriptSource).toBe('claude-code');
+    });
   });
 });

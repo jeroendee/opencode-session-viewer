@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { FolderOpen, Loader2, AlertTriangle } from 'lucide-react';
 import { FolderDropZone } from './FolderDropZone';
 import { ErrorBanner } from './ErrorBanner';
+import { SourceSelector } from './SourceSelector';
 import {
   isFileSystemAccessSupported,
   isDragDropSupported,
@@ -29,7 +30,21 @@ export function FolderPicker() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<ErrorState | null>(null);
 
-  const { setFileSystem, setProjects } = useSessionStore();
+  const { setFileSystem, setProjects, transcriptSource } = useSessionStore();
+
+  // Source-specific configuration
+  const sourceConfig = {
+    opencode: {
+      name: 'OpenCode',
+      folderPath: '~/.local/share/opencode/storage/',
+    },
+    'claude-code': {
+      name: 'Claude Code',
+      folderPath: '~/.claude/projects/',
+    },
+  };
+
+  const currentSource = sourceConfig[transcriptSource];
 
   const supportsDirectoryPicker = isFileSystemAccessSupported();
   const supportsDragDrop = isDragDropSupported();
@@ -51,7 +66,7 @@ export function FolderPicker() {
         if (result.projects.length === 0) {
           setError({
             message: 'No sessions found in this folder.',
-            suggestion: 'Make sure you selected the OpenCode storage folder (e.g., ~/.local/share/opencode/storage/)',
+            suggestion: `Make sure you selected the ${currentSource.name} storage folder (e.g., ${currentSource.folderPath})`,
             canRetry: false,
           });
           setIsLoading(false);
@@ -89,7 +104,7 @@ export function FolderPicker() {
         setIsLoading(false);
       }
     },
-    [setFileSystem, setProjects]
+    [setFileSystem, setProjects, currentSource]
   );
 
   const handleBrowseClick = useCallback(async () => {
@@ -145,16 +160,21 @@ export function FolderPicker() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[400px] p-8">
+      {/* Source selector */}
+      <div className="mb-6">
+        <SourceSelector />
+      </div>
+
       {/* Title and instructions */}
       <div className="text-center mb-8 max-w-md">
         <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-100 mb-2">
           Open Sessions Folder
         </h2>
         <p className="text-gray-600 dark:text-gray-400">
-          Browse your OpenCode sessions by opening your storage folder:
+          Browse your {currentSource.name} sessions by opening your storage folder:
         </p>
         <code className="inline-block mt-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded text-sm text-gray-700 dark:text-gray-300">
-          ~/.local/share/opencode/storage/
+          {currentSource.folderPath}
         </code>
       </div>
 

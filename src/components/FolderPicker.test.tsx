@@ -351,4 +351,55 @@ describe('FolderPicker', () => {
       expect(screen.getByText('Failed to read directory')).toBeInTheDocument();
     });
   });
+
+  describe('source selection', () => {
+    it('renders the SourceSelector component', () => {
+      vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(true);
+      vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
+
+      render(<FolderPicker />);
+
+      expect(screen.getByRole('radiogroup', { name: /source/i })).toBeInTheDocument();
+    });
+
+    it('shows OpenCode folder path when opencode is selected', () => {
+      vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(true);
+      vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
+      useSessionStore.setState({ transcriptSource: 'opencode' });
+
+      render(<FolderPicker />);
+
+      expect(screen.getByText('~/.local/share/opencode/storage/')).toBeInTheDocument();
+    });
+
+    it('shows Claude Code folder path when claude-code is selected', () => {
+      vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(true);
+      vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
+      useSessionStore.setState({ transcriptSource: 'claude-code' });
+
+      render(<FolderPicker />);
+
+      expect(screen.getByText('~/.claude/projects/')).toBeInTheDocument();
+    });
+
+    it('shows OpenCode-specific title when opencode is selected', () => {
+      vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(true);
+      vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
+      useSessionStore.setState({ transcriptSource: 'opencode' });
+
+      render(<FolderPicker />);
+
+      expect(screen.getByText(/Browse your OpenCode sessions/i)).toBeInTheDocument();
+    });
+
+    it('shows Claude Code-specific title when claude-code is selected', () => {
+      vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(true);
+      vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
+      useSessionStore.setState({ transcriptSource: 'claude-code' });
+
+      render(<FolderPicker />);
+
+      expect(screen.getByText(/Browse your Claude Code sessions/i)).toBeInTheDocument();
+    });
+  });
 });

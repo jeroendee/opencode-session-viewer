@@ -57,6 +57,11 @@ export interface YearGroup {
   months: MonthGroup[];
 }
 
+/**
+ * Represents the transcript source type.
+ */
+export type TranscriptSource = 'opencode' | 'claude-code';
+
 interface SessionState {
   // Session data (single session - existing)
   session: Session | null;
@@ -76,6 +81,7 @@ interface SessionState {
 
   // UI state
   sidebarOpen: boolean;
+  transcriptSource: TranscriptSource;
 
   // Actions (existing - single file loading)
   loadSession: (file: File) => Promise<void>;
@@ -94,6 +100,9 @@ interface SessionState {
   loadUserMessages: () => Promise<void>;
   clearFolder: () => void;
   browseForFolder: () => Promise<void>;
+
+  // Source selection
+  setTranscriptSource: (source: TranscriptSource) => void;
 }
 
 /**
@@ -163,6 +172,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   // UI state - sidebar visible by default
   sidebarOpen: true,
+  transcriptSource: 'opencode',
 
   // Load session from a File object
   loadSession: async (file: File) => {
@@ -429,5 +439,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         set({ isLoadingFolder: false });
       }
     }
+  },
+
+  // Source selection
+  setTranscriptSource: (source: TranscriptSource) => {
+    set({ transcriptSource: source });
   },
 }));
