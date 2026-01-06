@@ -1,5 +1,5 @@
 import type { MessageGroup } from './groupMessages';
-import type { ToolPart } from '../types/session';
+import type { TaskToolPart } from '../types/session';
 import { isSubtaskPart, isTaskToolPart } from '../types/session';
 
 /**
@@ -19,7 +19,7 @@ export interface TaskInfo {
  * All ToolState variants have input, so we can always try to extract it.
  * Returns 'task' if the agent type cannot be determined.
  */
-function getAgentTypeFromTaskToolPart(part: ToolPart): string {
+function getAgentTypeFromTaskToolPart(part: TaskToolPart): string {
   const input = part.state.input;
   
   if (typeof input !== 'object' || input === null) {

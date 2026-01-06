@@ -277,6 +277,9 @@ export function isSubtaskPart(part: Part): part is SubtaskPart {
   return part.type === 'subtask';
 }
 
-export function isTaskToolPart(part: Part): part is ToolPart {
+/** ToolPart specifically for the 'task' tool (sub-agent delegation) */
+export type TaskToolPart = ToolPart & { tool: 'task' };
+
+export function isTaskToolPart(part: Part): part is TaskToolPart {
   return isToolPart(part) && part.tool === 'task';
 }
