@@ -1,8 +1,8 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Bot } from 'lucide-react';
 import type { MessageGroup } from '../utils/groupMessages';
 import { getGroupSummary } from '../utils/groupMessages';
-import { extractTasks } from '../utils/extractTasks';
+import { extractTasks, type TaskInfo } from '../utils/extractTasks';
 import { truncate } from '../utils/formatters';
 
 interface MessageIndexProps {
@@ -41,6 +41,17 @@ export function MessageIndex({
     }
   }, [onTaskClick]);
 
+  // Memoize tasks extraction to avoid recomputing on every render
+  // Only recomputes when groups array reference changes
+  const tasksByMessageId = useMemo(() => {
+    const map = new Map<string, TaskInfo[]>();
+    for (const group of groups) {
+      const messageId = group.userMessage.info.id;
+      map.set(messageId, extractTasks(group));
+    }
+    return map;
+  }, [groups]);
+
   if (groups.length === 0) {
     return (
       <p className="text-sm text-gray-500 dark:text-gray-400 px-2">
@@ -57,7 +68,7 @@ export function MessageIndex({
           const isActive = messageId === activeMessageId;
           const hasMatch = matchedMessageIds.has(messageId);
           const summary = truncate(getGroupSummary(group), 40);
-          const tasks = extractTasks(group);
+          const tasks = tasksByMessageId.get(messageId) ?? [];
 
           return (
             <li key={messageId}>
