@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { Header } from './Header';
 import { useSessionStore } from '../store/sessionStore';
 import type { Session } from '../types/session';
+import * as exportHtml from '../utils/exportHtml';
+import * as saveFile from '../utils/saveFile';
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -209,6 +211,203 @@ describe('Header', () => {
       const dateElements = screen.getAllByText(/Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec/);
       expect(dateElements.length).toBeGreaterThan(0);
       expect(dateElements[0]).toBeInTheDocument();
+    });
+  });
+
+  describe('export button', () => {
+    let mockGenerateSessionHtml: ReturnType<typeof vi.spyOn>;
+    let mockCollectExportState: ReturnType<typeof vi.spyOn>;
+    let mockSaveHtmlFile: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      mockGenerateSessionHtml = vi.spyOn(exportHtml, 'generateSessionHtml').mockReturnValue('<html>test</html>');
+      mockCollectExportState = vi.spyOn(exportHtml, 'collectExportState').mockReturnValue({
+        theme: 'light',
+        expandedIds: new Set<string>(),
+      });
+      mockSaveHtmlFile = vi.spyOn(saveFile, 'saveHtmlFile').mockResolvedValue(true);
+    });
+
+    afterEach(() => {
+      mockGenerateSessionHtml.mockRestore();
+      mockCollectExportState.mockRestore();
+      mockSaveHtmlFile.mockRestore();
+    });
+
+    it('is NOT shown when no session is loaded', () => {
+      vi.mocked(useSessionStore).mockReturnValue({
+        session: null,
+        sidebarOpen: true,
+        toggleSidebar: mockToggleSidebar,
+      } as unknown as ReturnType<typeof useSessionStore>);
+
+      render(<Header />);
+      
+      expect(screen.queryByRole('button', { name: /Export session to HTML/i })).not.toBeInTheDocument();
+    });
+
+    it('is shown when session is loaded', () => {
+      vi.mocked(useSessionStore).mockReturnValue({
+        session: createMockSession(),
+        sidebarOpen: true,
+        toggleSidebar: mockToggleSidebar,
+      } as unknown as ReturnType<typeof useSessionStore>);
+
+      render(<Header />);
+      
+      expect(screen.getByRole('button', { name: /Export session to HTML/i })).toBeInTheDocument();
+    });
+
+    it('calls export utilities when clicked', async () => {
+      vi.useRealTimers(); // Use real timers for this async test
+      
+      const mockSession = createMockSession();
+      vi.mocked(useSessionStore).mockReturnValue({
+        session: mockSession,
+        sidebarOpen: true,
+        toggleSidebar: mockToggleSidebar,
+      } as unknown as ReturnType<typeof useSessionStore>);
+
+      render(<Header />);
+      
+      const exportButton = screen.getByRole('button', { name: /Export session to HTML/i });
+      
+      await act(async () => {
+        fireEvent.click(exportButton);
+      });
+      
+      // Should collect export state
+      expect(mockCollectExportState).toHaveBeenCalled();
+      
+      // Should generate HTML with session and options
+      expect(mockGenerateSessionHtml).toHaveBeenCalledWith(mockSession, {
+        theme: 'light',
+        expandedIds: expect.any(Set),
+      });
+      
+      // Should save the file
+      await waitFor(() => {
+        expect(mockSaveHtmlFile).toHaveBeenCalledWith(
+          '<html>test</html>',
+          expect.stringMatching(/implement-feature-x-.*\.html/)
+        );
+      });
+      
+      vi.useFakeTimers(); // Restore fake timers for other tests
+    });
+
+    it('shows loading state during export', async () => {
+      vi.useRealTimers(); // Use real timers for this async test
+      
+      let resolveExport: (value: boolean) => void;
+      mockSaveHtmlFile.mockImplementation(() => new Promise(resolve => {
+        resolveExport = resolve;
+      }));
+
+      vi.mocked(useSessionStore).mockReturnValue({
+        session: createMockSession(),
+        sidebarOpen: true,
+        toggleSidebar: mockToggleSidebar,
+      } as unknown as ReturnType<typeof useSessionStore>);
+
+      render(<Header />);
+      
+      const exportButton = screen.getByRole('button', { name: /Export session to HTML/i });
+      
+      // Click the export button
+      fireEvent.click(exportButton);
+      
+      // Button should be disabled during export
+      await waitFor(() => {
+        expect(exportButton).toBeDisabled();
+      });
+      
+      // Resolve the export
+      await act(async () => {
+        resolveExport!(true);
+      });
+      
+      // Button should be enabled again
+      await waitFor(() => {
+        expect(exportButton).not.toBeDisabled();
+      });
+      
+      vi.useFakeTimers(); // Restore fake timers for other tests
+    });
+
+    it('handles user cancellation gracefully', async () => {
+      vi.useRealTimers(); // Use real timers for this async test
+      
+      mockSaveHtmlFile.mockResolvedValue(false);
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      vi.mocked(useSessionStore).mockReturnValue({
+        session: createMockSession(),
+        sidebarOpen: true,
+        toggleSidebar: mockToggleSidebar,
+      } as unknown as ReturnType<typeof useSessionStore>);
+
+      render(<Header />);
+      
+      const exportButton = screen.getByRole('button', { name: /Export session to HTML/i });
+      
+      await act(async () => {
+        fireEvent.click(exportButton);
+      });
+      
+      // Wait for export to complete
+      await waitFor(() => {
+        expect(exportButton).not.toBeDisabled();
+      });
+      
+      // Should not log error for cancellation
+      expect(consoleSpy).not.toHaveBeenCalled();
+      consoleSpy.mockRestore();
+      
+      vi.useFakeTimers(); // Restore fake timers for other tests
+    });
+
+    it('logs error when export fails', async () => {
+      vi.useRealTimers(); // Use real timers for this async test
+      
+      const testError = new Error('Save failed');
+      mockSaveHtmlFile.mockRejectedValue(testError);
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      vi.mocked(useSessionStore).mockReturnValue({
+        session: createMockSession(),
+        sidebarOpen: true,
+        toggleSidebar: mockToggleSidebar,
+      } as unknown as ReturnType<typeof useSessionStore>);
+
+      render(<Header />);
+      
+      const exportButton = screen.getByRole('button', { name: /Export session to HTML/i });
+      
+      await act(async () => {
+        fireEvent.click(exportButton);
+      });
+      
+      await waitFor(() => {
+        expect(consoleSpy).toHaveBeenCalledWith('Failed to export session:', testError);
+      });
+      
+      consoleSpy.mockRestore();
+      
+      vi.useFakeTimers(); // Restore fake timers for other tests
+    });
+
+    it('has correct tooltip title', () => {
+      vi.mocked(useSessionStore).mockReturnValue({
+        session: createMockSession(),
+        sidebarOpen: true,
+        toggleSidebar: mockToggleSidebar,
+      } as unknown as ReturnType<typeof useSessionStore>);
+
+      render(<Header />);
+      
+      const exportButton = screen.getByRole('button', { name: /Export session to HTML/i });
+      expect(exportButton).toHaveAttribute('title', 'Export to HTML');
     });
   });
 

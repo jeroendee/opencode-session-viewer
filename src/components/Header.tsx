@@ -1,16 +1,53 @@
-import { Clock, Coins, Hash, FileCode, PanelLeftClose, PanelLeft, Calendar } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { Clock, Coins, Hash, FileCode, PanelLeftClose, PanelLeft, Calendar, Download, Loader2 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { CopyableSessionId } from './CopyableSessionId';
 import { useSessionStore } from '../store/sessionStore';
 import { calculateTotals } from '../utils/calculateTotals';
 import { formatCost, formatTokens, formatDuration, formatFileChanges, formatDate } from '../utils/formatters';
+import { generateSessionHtml, collectExportState } from '../utils/exportHtml';
+import { saveHtmlFile } from '../utils/saveFile';
 import type { Session } from '../types/session';
 import { isAssistantMessage } from '../types/session';
 
 export function Header() {
   const { session, sidebarOpen, toggleSidebar } = useSessionStore();
+  const [isExporting, setIsExporting] = useState(false);
   
   const totals = session ? calculateTotals(session) : null;
+
+  const handleExport = useCallback(async () => {
+    if (!session) return;
+    
+    setIsExporting(true);
+    try {
+      // Collect current UI state (theme, expanded sections)
+      const exportOptions = collectExportState();
+      
+      // Generate the HTML
+      const html = generateSessionHtml(session, exportOptions);
+      
+      // Create a safe filename from the session title
+      const safeTitle = (session.info.title || 'session')
+        .replace(/[^a-zA-Z0-9-_\s]/g, '')
+        .replace(/\s+/g, '-')
+        .toLowerCase()
+        .slice(0, 50);
+      const suggestedName = `${safeTitle}-${session.info.id.slice(-8)}.html`;
+      
+      // Save the file
+      const saved = await saveHtmlFile(html, suggestedName);
+      
+      if (!saved) {
+        // User cancelled - no error to report
+        return;
+      }
+    } catch (error) {
+      console.error('Failed to export session:', error);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [session]);
 
   return (
     <header className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 sticky top-0 z-10">
@@ -95,6 +132,23 @@ export function Header() {
               </div>
             )}
           </div>
+        )}
+
+        {/* Export button - only visible when session is loaded */}
+        {session && (
+          <button
+            onClick={handleExport}
+            disabled={isExporting}
+            className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Export session to HTML"
+            title="Export to HTML"
+          >
+            {isExporting ? (
+              <Loader2 className="w-5 h-5 text-gray-600 dark:text-gray-300 animate-spin" />
+            ) : (
+              <Download className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+            )}
+          </button>
         )}
 
         {/* Theme toggle */}
