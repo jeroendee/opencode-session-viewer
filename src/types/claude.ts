@@ -10,6 +10,15 @@ export interface ClaudeTextBlock {
 }
 
 /**
+ * Thinking content block - Claude's extended thinking output
+ */
+export interface ClaudeThinkingBlock {
+  type: 'thinking';
+  thinking: string;
+  signature: string;
+}
+
+/**
  * Tool use content block - when Claude invokes a tool
  */
 export interface ClaudeToolUse {
@@ -32,7 +41,7 @@ export interface ClaudeToolResult {
 /**
  * Union of all content block types in Claude messages
  */
-export type ClaudeContentBlock = ClaudeTextBlock | ClaudeToolUse | ClaudeToolResult;
+export type ClaudeContentBlock = ClaudeTextBlock | ClaudeToolUse | ClaudeToolResult | ClaudeThinkingBlock;
 
 /**
  * Token usage tracking for Claude API responses
@@ -45,14 +54,28 @@ export interface ClaudeUsage {
 }
 
 /**
+ * Base fields for transcript entries
+ */
+export interface ClaudeBaseEntry {
+  uuid: string;
+  type: string;
+  timestamp?: string;
+}
+
+/**
  * User message entry in Claude transcript
  */
 export interface ClaudeUserMessage {
   type: 'user';
+  uuid?: string;
+  parentUuid?: string;
+  timestamp?: string;
   message: {
     role: 'user';
     content: string | ClaudeContentBlock[];
   };
+  cwd?: string;
+  gitBranch?: string;
 }
 
 /**
@@ -60,11 +83,35 @@ export interface ClaudeUserMessage {
  */
 export interface ClaudeAssistantMessage {
   type: 'assistant';
+  uuid?: string;
+  parentUuid?: string;
+  timestamp?: string;
   message: {
     role: 'assistant';
     content: ClaudeContentBlock[];
+    model?: string;
   };
   usage?: ClaudeUsage;
+  cwd?: string;
+  gitBranch?: string;
+}
+
+/**
+ * File history snapshot entry - tracks file state
+ */
+export interface ClaudeFileHistorySnapshot {
+  type: 'file_history_snapshot';
+  snapshot: Record<string, string>;
+}
+
+/**
+ * System entry - system messages in transcript
+ */
+export interface ClaudeSystemEntry {
+  type: 'system';
+  message: {
+    content: string;
+  };
 }
 
 /**
@@ -90,4 +137,17 @@ export function isClaudeAssistantEntry(
   entry: ClaudeTranscriptEntry
 ): entry is ClaudeAssistantMessage {
   return entry.type === 'assistant';
+}
+
+/**
+ * Type guard to check if entry is a user or assistant message (not system/snapshot)
+ */
+export function isClaudeMessageEntry(
+  entry: unknown
+): entry is ClaudeUserMessage | ClaudeAssistantMessage {
+  if (typeof entry !== 'object' || entry === null) {
+    return false;
+  }
+  const typed = entry as { type?: unknown };
+  return typed.type === 'user' || typed.type === 'assistant';
 }

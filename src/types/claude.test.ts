@@ -7,8 +7,13 @@ import {
   type ClaudeToolResult,
   type ClaudeUsage,
   type ClaudeTextBlock,
+  type ClaudeThinkingBlock,
+  type ClaudeBaseEntry,
+  type ClaudeFileHistorySnapshot,
+  type ClaudeSystemEntry,
   isClaudeUserEntry,
   isClaudeAssistantEntry,
+  isClaudeMessageEntry,
 } from './claude';
 
 describe('Claude TypeScript Types', () => {
@@ -254,6 +259,117 @@ describe('Claude TypeScript Types', () => {
       };
 
       expect(isClaudeAssistantEntry(userEntry)).toBe(false);
+    });
+  });
+
+  describe('ClaudeThinkingBlock', () => {
+    it('has type thinking with thinking and signature fields', () => {
+      const thinkingBlock: ClaudeThinkingBlock = {
+        type: 'thinking',
+        thinking: 'Let me analyze this step by step...',
+        signature: 'abc123signature',
+      };
+
+      expect(thinkingBlock.type).toBe('thinking');
+      expect(thinkingBlock.thinking).toBe('Let me analyze this step by step...');
+      expect(thinkingBlock.signature).toBe('abc123signature');
+    });
+  });
+
+  describe('ClaudeBaseEntry', () => {
+    it('has uuid, type, and optional timestamp fields', () => {
+      const baseEntry: ClaudeBaseEntry = {
+        uuid: '550e8400-e29b-41d4-a716-446655440000',
+        type: 'user',
+      };
+
+      expect(baseEntry.uuid).toBe('550e8400-e29b-41d4-a716-446655440000');
+      expect(baseEntry.type).toBe('user');
+      expect(baseEntry.timestamp).toBeUndefined();
+    });
+
+    it('accepts timestamp field', () => {
+      const baseEntry: ClaudeBaseEntry = {
+        uuid: '550e8400-e29b-41d4-a716-446655440000',
+        type: 'assistant',
+        timestamp: '2025-01-06T12:00:00Z',
+      };
+
+      expect(baseEntry.timestamp).toBe('2025-01-06T12:00:00Z');
+    });
+  });
+
+  describe('ClaudeFileHistorySnapshot', () => {
+    it('has type file_history_snapshot with snapshot data', () => {
+      const snapshot: ClaudeFileHistorySnapshot = {
+        type: 'file_history_snapshot',
+        snapshot: {
+          '/path/to/file.ts': 'file content hash or data',
+        },
+      };
+
+      expect(snapshot.type).toBe('file_history_snapshot');
+      expect(snapshot.snapshot['/path/to/file.ts']).toBe('file content hash or data');
+    });
+  });
+
+  describe('ClaudeSystemEntry', () => {
+    it('has type system with message content', () => {
+      const systemEntry: ClaudeSystemEntry = {
+        type: 'system',
+        message: {
+          content: 'System initialized',
+        },
+      };
+
+      expect(systemEntry.type).toBe('system');
+      expect(systemEntry.message.content).toBe('System initialized');
+    });
+  });
+
+  describe('isClaudeMessageEntry', () => {
+    it('returns true for user entry', () => {
+      const userEntry: ClaudeTranscriptEntry = {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'Hello' }],
+        },
+      };
+
+      expect(isClaudeMessageEntry(userEntry)).toBe(true);
+    });
+
+    it('returns true for assistant entry', () => {
+      const assistantEntry: ClaudeTranscriptEntry = {
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Hello back!' }],
+        },
+      };
+
+      expect(isClaudeMessageEntry(assistantEntry)).toBe(true);
+    });
+
+    it('returns false for system entry', () => {
+      const systemEntry = {
+        type: 'system',
+        message: {
+          content: 'System initialized',
+        },
+      } as unknown;
+
+      expect(isClaudeMessageEntry(systemEntry)).toBe(false);
+    });
+
+    it('returns false for file_history_snapshot entry', () => {
+      const snapshotEntry = {
+        type: 'file_history_snapshot',
+        snapshot: {},
+      } as unknown;
+
+      expect(isClaudeMessageEntry(snapshotEntry)).toBe(false);
     });
   });
 });
