@@ -276,3 +276,7 @@ export function isToolError(state: ToolState): state is ToolPartError {
 export function isSubtaskPart(part: Part): part is SubtaskPart {
   return part.type === 'subtask';
 }
+
+export function isTaskToolPart(part: Part): part is ToolPart {
+  return isToolPart(part) && part.tool === 'task';
+}
