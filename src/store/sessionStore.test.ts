@@ -673,6 +673,130 @@ describe('sessionStore - reactivity', () => {
   });
 });
 
+describe('sessionStore - Claude session detection', () => {
+  beforeEach(() => {
+    resetStore();
+  });
+
+  // Helper to create Claude session info
+  const createClaudeSessionInfo = (
+    id: string,
+    projectID: string = '-Users-test-project'
+  ): SessionInfo => ({
+    id,
+    version: 'claude-code',
+    projectID,
+    directory: '/Users/test/project',
+    title: `Claude Session ${id}`,
+    time: {
+      created: Date.now(),
+      updated: Date.now(),
+    },
+  });
+
+  describe('selectSession version detection', () => {
+    it('detects Claude session when version starts with claude-code', async () => {
+      const claudeSession = createClaudeSessionInfo('claude-session-1');
+      const node = createMockSessionNode(claudeSession);
+      const project: ProjectInfo = {
+        id: '-Users-test-project',
+        path: '/Users/test/project',
+        sessions: [node],
+      };
+
+      // Mock the JSONL content for Claude session
+      const jsonlContent = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello Claude"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello!"}]}}`;
+
+      const files = new Map([
+        ['projects/-Users-test-project/claude-session-1.jsonl', jsonlContent],
+      ]);
+      const mockFs = createMockFileSystem(files);
+
+      useSessionStore.getState().setFileSystem(mockFs);
+      useSessionStore.getState().setProjects([project]);
+
+      await useSessionStore.getState().selectSession('claude-session-1');
+
+      expect(useSessionStore.getState().session).not.toBeNull();
+      expect(useSessionStore.getState().session?.info.version).toBe('claude-code');
+      expect(useSessionStore.getState().session?.messages).toHaveLength(2);
+    });
+
+    it('uses OpenCode loader when version does not start with claude-code', async () => {
+      const opencodeSession = createMockSessionInfo('opencode-session-1', 'project-1');
+      const node = createMockSessionNode(opencodeSession);
+      const project: ProjectInfo = {
+        id: 'project-1',
+        path: '/Users/test/project-1',
+        sessions: [node],
+      };
+
+      // Mock OpenCode message files
+      const msgInfo = {
+        id: 'msg-1',
+        sessionID: 'opencode-session-1',
+        role: 'user',
+        time: { created: Date.now() },
+        agent: 'test-agent',
+        model: { providerID: 'test-provider', modelID: 'test-model' },
+      };
+      const partInfo = {
+        id: 'part-1',
+        sessionID: 'opencode-session-1',
+        messageID: 'msg-1',
+        type: 'text',
+        text: 'Hello OpenCode',
+      };
+      const files = new Map([
+        ['message/opencode-session-1/msg-1.json', JSON.stringify(msgInfo)],
+        ['part/msg-1/part-1.json', JSON.stringify(partInfo)],
+      ]);
+      const mockFs = createMockFileSystem(files);
+
+      useSessionStore.getState().setFileSystem(mockFs);
+      useSessionStore.getState().setProjects([project]);
+
+      await useSessionStore.getState().selectSession('opencode-session-1');
+
+      expect(useSessionStore.getState().session).not.toBeNull();
+      expect(useSessionStore.getState().session?.info.version).toBe('1.0.0');
+      expect(useSessionStore.getState().session?.messages).toHaveLength(1);
+    });
+
+    it('handles Claude session with version claude-code-1.0', async () => {
+      const claudeSession: SessionInfo = {
+        id: 'claude-v1-session',
+        version: 'claude-code-1.0',
+        projectID: '-Users-test-project',
+        directory: '/Users/test/project',
+        title: 'Claude v1 Session',
+        time: { created: Date.now(), updated: Date.now() },
+      };
+      const node = createMockSessionNode(claudeSession);
+      const project: ProjectInfo = {
+        id: '-Users-test-project',
+        path: '/Users/test/project',
+        sessions: [node],
+      };
+
+      const jsonlContent = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Test"}]}}`;
+      const files = new Map([
+        ['projects/-Users-test-project/claude-v1-session.jsonl', jsonlContent],
+      ]);
+      const mockFs = createMockFileSystem(files);
+
+      useSessionStore.getState().setFileSystem(mockFs);
+      useSessionStore.getState().setProjects([project]);
+
+      await useSessionStore.getState().selectSession('claude-v1-session');
+
+      expect(useSessionStore.getState().session).not.toBeNull();
+      expect(useSessionStore.getState().session?.info.version).toBe('claude-code-1.0');
+    });
+  });
+});
+
 describe('sessionStore - transcriptSource selection', () => {
   beforeEach(() => {
     resetStore();

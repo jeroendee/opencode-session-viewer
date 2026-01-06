@@ -3,8 +3,10 @@ import {
   extractSessionInfoFromClaude,
   listClaudeSessionInfos,
   loadAllClaudeSessions,
+  loadClaudeSessionContent,
 } from './claudeSessionAdapter';
 import type { VirtualFileSystem } from './fileSystem';
+import type { SessionInfo } from '../types/session';
 import { StorageError } from './errors';
 
 describe('claudeSessionAdapter', () => {
@@ -232,6 +234,131 @@ describe('claudeSessionAdapter', () => {
       expect(result.projects).toHaveLength(1);
       expect(result.projects[0].sessions).toHaveLength(0);
       expect(result.errorCount).toBe(0);
+    });
+  });
+
+  describe('loadClaudeSessionContent', () => {
+    it('reads JSONL from projects/{projectID}/{sessionId}.jsonl path', async () => {
+      const jsonlContent = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hi!"}]}}`;
+
+      const mockFs: VirtualFileSystem = {
+        readFile: vi.fn().mockResolvedValue(jsonlContent),
+        listDirectory: vi.fn().mockResolvedValue([]),
+        exists: vi.fn().mockResolvedValue(true),
+      };
+
+      const sessionInfo: SessionInfo = {
+        id: 'session-123',
+        version: 'claude-code',
+        projectID: '-Users-test-project',
+        directory: '/Users/test/project',
+        title: 'Test session',
+        time: { created: Date.now(), updated: Date.now() },
+      };
+
+      await loadClaudeSessionContent(sessionInfo, mockFs);
+
+      expect(mockFs.readFile).toHaveBeenCalledWith([
+        'projects',
+        '-Users-test-project',
+        'session-123.jsonl',
+      ]);
+    });
+
+    it('returns Session with info and converted messages', async () => {
+      const jsonlContent = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hi!"}]}}`;
+
+      const mockFs: VirtualFileSystem = {
+        readFile: vi.fn().mockResolvedValue(jsonlContent),
+        listDirectory: vi.fn().mockResolvedValue([]),
+        exists: vi.fn().mockResolvedValue(true),
+      };
+
+      const sessionInfo: SessionInfo = {
+        id: 'session-123',
+        version: 'claude-code',
+        projectID: '-Users-test-project',
+        directory: '/Users/test/project',
+        title: 'Test session',
+        time: { created: Date.now(), updated: Date.now() },
+      };
+
+      const session = await loadClaudeSessionContent(sessionInfo, mockFs);
+
+      expect(session.info).toBe(sessionInfo);
+      expect(session.messages).toHaveLength(2);
+      expect(session.messages[0].info.role).toBe('user');
+      expect(session.messages[1].info.role).toBe('assistant');
+    });
+
+    it('throws error when session file is not found', async () => {
+      const mockFs: VirtualFileSystem = {
+        readFile: vi.fn().mockResolvedValue(null),
+        listDirectory: vi.fn().mockResolvedValue([]),
+        exists: vi.fn().mockResolvedValue(false),
+      };
+
+      const sessionInfo: SessionInfo = {
+        id: 'missing-session',
+        version: 'claude-code',
+        projectID: '-Users-test-project',
+        directory: '/Users/test/project',
+        title: 'Missing session',
+        time: { created: Date.now(), updated: Date.now() },
+      };
+
+      await expect(loadClaudeSessionContent(sessionInfo, mockFs)).rejects.toThrow(
+        /Session file not found/
+      );
+    });
+
+    it('throws error when JSONL content is invalid', async () => {
+      const mockFs: VirtualFileSystem = {
+        readFile: vi.fn().mockResolvedValue('invalid json content'),
+        listDirectory: vi.fn().mockResolvedValue([]),
+        exists: vi.fn().mockResolvedValue(true),
+      };
+
+      const sessionInfo: SessionInfo = {
+        id: 'bad-session',
+        version: 'claude-code',
+        projectID: '-Users-test-project',
+        directory: '/Users/test/project',
+        title: 'Bad session',
+        time: { created: Date.now(), updated: Date.now() },
+      };
+
+      await expect(loadClaudeSessionContent(sessionInfo, mockFs)).rejects.toThrow();
+    });
+
+    it('preserves sessionInfo in returned Session', async () => {
+      const jsonlContent = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello"}]}}`;
+
+      const mockFs: VirtualFileSystem = {
+        readFile: vi.fn().mockResolvedValue(jsonlContent),
+        listDirectory: vi.fn().mockResolvedValue([]),
+        exists: vi.fn().mockResolvedValue(true),
+      };
+
+      const sessionInfo: SessionInfo = {
+        id: 'session-456',
+        version: 'claude-code-1.0',
+        projectID: '-Users-test-project',
+        directory: '/Users/test/project',
+        title: 'Custom title',
+        time: { created: 1000, updated: 2000 },
+      };
+
+      const session = await loadClaudeSessionContent(sessionInfo, mockFs);
+
+      // Session.info should be the exact sessionInfo passed in
+      expect(session.info.id).toBe('session-456');
+      expect(session.info.version).toBe('claude-code-1.0');
+      expect(session.info.title).toBe('Custom title');
+      expect(session.info.time.created).toBe(1000);
+      expect(session.info.time.updated).toBe(2000);
     });
   });
 });

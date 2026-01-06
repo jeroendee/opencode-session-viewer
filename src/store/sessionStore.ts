@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Session, SessionInfo } from '../types/session';
 import type { VirtualFileSystem } from '../lib/fileSystem';
 import { loadSessionContent, loadUserMessagesForSession } from '../lib/sessionLoader';
+import { loadClaudeSessionContent } from '../lib/claudeSessionAdapter';
 
 /**
  * Represents a session with its child sessions (for branched conversations).
@@ -292,11 +293,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     try {
       // If we have a file system, load the full session data using lazy loading
       if (state.fileSystem) {
-        const session = await loadSessionContent(
-          sessionId,
-          state.allSessions,
-          state.fileSystem
-        );
+        // Detect Claude session by version prefix
+        const isClaudeSession = sessionInfo.version.startsWith('claude-code');
+
+        let session: Session;
+        if (isClaudeSession) {
+          session = await loadClaudeSessionContent(sessionInfo, state.fileSystem);
+        } else {
+          session = await loadSessionContent(
+            sessionId,
+            state.allSessions,
+            state.fileSystem
+          );
+        }
 
         // Check if user selected a different session while we were loading
         // If so, ignore this result to avoid race condition

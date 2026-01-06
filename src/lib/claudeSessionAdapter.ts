@@ -1,8 +1,8 @@
-import type { SessionInfo } from '../types/session';
+import type { Session, SessionInfo } from '../types/session';
 import type { VirtualFileSystem } from './fileSystem';
 import type { ProjectInfo, SessionNode } from '../store/sessionStore';
-import { parseClaudeJsonl } from './claudeParser';
-import { listClaudeProjects, decodeClaudePath } from './claudeFileSystem';
+import { parseClaudeJsonl, convertToSession } from './claudeParser';
+import { listClaudeProjects } from './claudeFileSystem';
 import { StorageError } from './errors';
 
 /**
@@ -159,4 +159,34 @@ export async function loadAllClaudeSessions(
   }
 
   return { projects, sessions, errorCount };
+}
+
+/**
+ * Loads full session content for a Claude session.
+ * Reads JSONL from projects/{projectID}/{sessionId}.jsonl and converts to Session.
+ *
+ * @param sessionInfo - SessionInfo for the Claude session to load
+ * @param fs - Virtual file system to read from
+ * @returns Session with info and converted messages
+ * @throws Error if session file not found or JSONL is invalid
+ */
+export async function loadClaudeSessionContent(
+  sessionInfo: SessionInfo,
+  fs: VirtualFileSystem
+): Promise<Session> {
+  const path = ['projects', sessionInfo.projectID, `${sessionInfo.id}.jsonl`];
+  const content = await fs.readFile(path);
+
+  if (!content) {
+    throw new Error(`Session file not found: ${path.join('/')}`);
+  }
+
+  const entries = parseClaudeJsonl(content);
+  const converted = convertToSession(entries, sessionInfo.id);
+
+  // Use the passed sessionInfo instead of the generated one
+  return {
+    info: sessionInfo,
+    messages: converted.messages,
+  };
 }

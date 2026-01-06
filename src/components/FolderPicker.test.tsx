@@ -24,6 +24,13 @@ vi.mock('../lib/sessionLoader', () => ({
   loadAllSessions: vi.fn(),
 }));
 
+// Mock the Claude session adapter
+vi.mock('../lib/claudeSessionAdapter', () => ({
+  loadAllClaudeSessions: vi.fn(),
+}));
+
+import * as claudeSessionAdapter from '../lib/claudeSessionAdapter';
+
 describe('FolderPicker', () => {
   const mockSetFileSystem = vi.fn();
   const mockSetProjects = vi.fn();
@@ -400,6 +407,126 @@ describe('FolderPicker', () => {
       render(<FolderPicker />);
 
       expect(screen.getByText(/Browse your Claude Code sessions/i)).toBeInTheDocument();
+    });
+  });
+
+  describe('session loader dispatch', () => {
+    it('calls loadAllSessions when transcriptSource is opencode', async () => {
+      vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(true);
+      vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
+      useSessionStore.setState({ transcriptSource: 'opencode' });
+
+      const mockHandle = {} as FileSystemDirectoryHandle;
+      vi.mocked(fileSystem.openDirectoryPicker).mockResolvedValue(mockHandle);
+
+      const mockFs = {
+        readFile: vi.fn(),
+        listDirectory: vi.fn(),
+        exists: vi.fn(),
+      };
+      vi.mocked(fileSystem.createFileSystemFromHandle).mockReturnValue(mockFs);
+
+      const mockProjects = [{ id: 'proj1', path: '/path', sessions: [] }];
+      vi.mocked(sessionLoader.loadAllSessions).mockResolvedValue({
+        projects: mockProjects,
+        sessions: {},
+        errorCount: 0,
+      });
+
+      render(<FolderPicker />);
+
+      const browseButton = screen.getByRole('button', { name: 'Browse Folder' });
+      fireEvent.click(browseButton);
+
+      await waitFor(() => {
+        expect(sessionLoader.loadAllSessions).toHaveBeenCalledWith(mockFs);
+        expect(claudeSessionAdapter.loadAllClaudeSessions).not.toHaveBeenCalled();
+      });
+    });
+
+    it('calls loadAllClaudeSessions when transcriptSource is claude-code', async () => {
+      vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(true);
+      vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
+      useSessionStore.setState({ transcriptSource: 'claude-code' });
+
+      const mockHandle = {} as FileSystemDirectoryHandle;
+      vi.mocked(fileSystem.openDirectoryPicker).mockResolvedValue(mockHandle);
+
+      const mockFs = {
+        readFile: vi.fn(),
+        listDirectory: vi.fn(),
+        exists: vi.fn(),
+      };
+      vi.mocked(fileSystem.createFileSystemFromHandle).mockReturnValue(mockFs);
+
+      const mockProjects = [{ id: 'proj1', path: '/path', sessions: [] }];
+      vi.mocked(claudeSessionAdapter.loadAllClaudeSessions).mockResolvedValue({
+        projects: mockProjects,
+        sessions: {},
+        errorCount: 0,
+      });
+
+      render(<FolderPicker />);
+
+      const browseButton = screen.getByRole('button', { name: 'Browse Folder' });
+      fireEvent.click(browseButton);
+
+      await waitFor(() => {
+        expect(claudeSessionAdapter.loadAllClaudeSessions).toHaveBeenCalledWith(mockFs);
+        expect(sessionLoader.loadAllSessions).not.toHaveBeenCalled();
+      });
+    });
+
+    it('calls loadAllClaudeSessions on folder drop when claude-code is selected', async () => {
+      vi.mocked(fileSystem.isFileSystemAccessSupported).mockReturnValue(false);
+      vi.mocked(fileSystem.isDragDropSupported).mockReturnValue(true);
+      useSessionStore.setState({ transcriptSource: 'claude-code' });
+
+      const mockFs = {
+        readFile: vi.fn(),
+        listDirectory: vi.fn(),
+        exists: vi.fn(),
+      };
+      vi.mocked(fileSystem.createFileSystemFromDropped).mockReturnValue(mockFs);
+
+      const mockProjects = [{ id: 'proj1', path: '/path', sessions: [] }];
+      vi.mocked(claudeSessionAdapter.loadAllClaudeSessions).mockResolvedValue({
+        projects: mockProjects,
+        sessions: {},
+        errorCount: 0,
+      });
+
+      render(<FolderPicker />);
+
+      // Find the drop zone
+      const dropZone = screen.getByText('Drop folder here').closest('div')!.parentElement!;
+
+      // Create a mock directory entry
+      const mockDirEntry = {
+        isFile: false,
+        isDirectory: true,
+        name: '.claude',
+        createReader: () => ({
+          readEntries: (callback: (entries: FileSystemEntry[]) => void) => callback([]),
+        }),
+      };
+
+      const mockDataTransfer = {
+        items: {
+          0: {
+            kind: 'file',
+            webkitGetAsEntry: () => mockDirEntry,
+          },
+          length: 1,
+        },
+      };
+
+      fireEvent.drop(dropZone, { dataTransfer: mockDataTransfer });
+
+      await waitFor(() => {
+        expect(claudeSessionAdapter.loadAllClaudeSessions).toHaveBeenCalledWith(mockFs);
+        expect(sessionLoader.loadAllSessions).not.toHaveBeenCalled();
+      });
     });
   });
 });

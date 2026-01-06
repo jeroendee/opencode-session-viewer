@@ -13,6 +13,7 @@ import {
   DroppedDirectoryContents,
 } from '../lib/fileSystem';
 import { loadAllSessions } from '../lib/sessionLoader';
+import { loadAllClaudeSessions } from '../lib/claudeSessionAdapter';
 import { StorageError } from '../lib/errors';
 import { useSessionStore } from '../store/sessionStore';
 
@@ -61,7 +62,10 @@ export function FolderPicker() {
 
       try {
         const fs = createFs();
-        const result = await loadAllSessions(fs);
+        // Dispatch to correct loader based on transcript source
+        const result = transcriptSource === 'claude-code'
+          ? await loadAllClaudeSessions(fs)
+          : await loadAllSessions(fs);
 
         if (result.projects.length === 0) {
           setError({
@@ -104,7 +108,7 @@ export function FolderPicker() {
         setIsLoading(false);
       }
     },
-    [setFileSystem, setProjects, currentSource]
+    [setFileSystem, setProjects, currentSource, transcriptSource]
   );
 
   const handleBrowseClick = useCallback(async () => {
