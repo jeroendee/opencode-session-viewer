@@ -83,45 +83,63 @@ function CodeBlock({ className, children }: CodeBlockProps) {
 // Memoized component definitions to avoid re-creating on every render
 const markdownComponents: Components = {
   code: CodeBlock,
+  // Style headings with color and spacing (like OpenCode terminal)
+  h1: ({ children, node, ...props }) => (
+    <h1 className="text-xl font-bold text-amber-400 mt-6 mb-2 first:mt-0" {...props}>{children}</h1>
+  ),
+  h2: ({ children, node, ...props }) => (
+    <h2 className="text-lg font-bold text-amber-400 mt-5 mb-2 first:mt-0" {...props}>{children}</h2>
+  ),
+  h3: ({ children, node, ...props }) => (
+    <h3 className="text-base font-bold text-amber-300 mt-4 mb-1 first:mt-0" {...props}>{children}</h3>
+  ),
+  h4: ({ children, node, ...props }) => (
+    <h4 className="text-sm font-semibold text-amber-300 mt-3 mb-1 first:mt-0" {...props}>{children}</h4>
+  ),
+  // Add paragraph spacing
+  p: ({ children, node, ...props }) => (
+    <p className="mb-2" {...props}>{children}</p>
+  ),
   // Style links
-  a: ({ children, href }) => (
+  a: ({ children, href, node, ...props }) => (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
       className="text-blue-600 dark:text-blue-400 hover:underline"
+      {...props}
     >
       {children}
     </a>
   ),
   // Style blockquotes
-  blockquote: ({ children }) => (
-    <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic text-gray-600 dark:text-gray-400">
+  blockquote: ({ children, node, ...props }) => (
+    <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic text-gray-600 dark:text-gray-400" {...props}>
       {children}
     </blockquote>
   ),
   // Style lists
-  ul: ({ children }) => (
-    <ul className="list-disc list-inside space-y-1">{children}</ul>
+  ul: ({ children, node, ...props }) => (
+    <ul className="list-disc list-inside space-y-1" {...props}>{children}</ul>
   ),
-  ol: ({ children }) => (
-    <ol className="list-decimal list-inside space-y-1">{children}</ol>
+  ol: ({ children, node, ...props }) => (
+    <ol className="list-decimal list-inside space-y-1" {...props}>{children}</ol>
   ),
   // Style tables
-  table: ({ children }) => (
+  table: ({ children, node, ...props }) => (
     <div className="overflow-x-auto my-4">
-      <table className="min-w-full border-collapse border border-gray-300 dark:border-gray-600">
+      <table className="min-w-full border-collapse border border-gray-300 dark:border-gray-600" {...props}>
         {children}
       </table>
     </div>
   ),
-  th: ({ children }) => (
-    <th className="border border-gray-300 dark:border-gray-600 px-3 py-2 bg-gray-100 dark:bg-gray-700 font-semibold text-left">
+  th: ({ children, node, ...props }) => (
+    <th className="border border-gray-300 dark:border-gray-600 px-3 py-2 bg-gray-100 dark:bg-gray-700 font-semibold text-left" {...props}>
       {children}
     </th>
   ),
-  td: ({ children }) => (
-    <td className="border border-gray-300 dark:border-gray-600 px-3 py-2">
+  td: ({ children, node, ...props }) => (
+    <td className="border border-gray-300 dark:border-gray-600 px-3 py-2" {...props}>
       {children}
     </td>
   ),
@@ -142,8 +160,9 @@ function highlightChildren(children: React.ReactNode, query: string): React.Reac
       return <React.Fragment key={index}>{highlightText(child, query)}</React.Fragment>;
     }
     if (React.isValidElement(child)) {
-      // Skip highlighting inside code elements (inline code)
-      if (child.type === 'code' || (typeof child.type === 'function' && child.type.name === 'CodeBlock')) {
+      // Skip highlighting inside code elements (inline code and code blocks)
+      // Use direct reference comparison for CodeBlock to avoid fragile name-based checks
+      if (child.type === 'code' || child.type === CodeBlock) {
         return child;
       }
       // Recursively process children of other elements
@@ -169,26 +188,34 @@ export function TextPart({ part }: TextPartProps) {
     }
 
     // Helper to create a highlighting wrapper for text-containing elements
-    const withHighlighting = (Tag: keyof JSX.IntrinsicElements, className?: string) => {
-      return ({ children }: { children?: React.ReactNode }) => {
+    // Forwards all props from react-markdown except 'node' (AST node, not needed in DOM)
+    // Properly merges className to preserve any classes from react-markdown plugins
+    const withHighlighting = (Tag: keyof JSX.IntrinsicElements, baseClassName?: string) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return ({ children, node: _node, className: propsClassName, ...props }: any) => {
         const highlighted = highlightChildren(children, searchQuery);
-        return className 
-          ? <Tag className={className}>{highlighted}</Tag>
-          : <Tag>{highlighted}</Tag>;
+        // Merge base className with any className from props (e.g., from plugins)
+        const mergedClassName = [baseClassName, propsClassName].filter(Boolean).join(' ') || undefined;
+        return <Tag className={mergedClassName} {...props}>{highlighted}</Tag>;
       };
     };
 
     return {
       ...markdownComponents,
       // Override prose elements to highlight text
-      p: withHighlighting('p'),
+      p: withHighlighting('p', 'mb-2'),
       li: withHighlighting('li'),
       td: withHighlighting('td', 'border border-gray-300 dark:border-gray-600 px-3 py-2'),
       th: withHighlighting('th', 'border border-gray-300 dark:border-gray-600 px-3 py-2 bg-gray-100 dark:bg-gray-700 font-semibold text-left'),
       strong: withHighlighting('strong'),
       em: withHighlighting('em'),
+      // Override headings to highlight text while preserving styling
+      h1: withHighlighting('h1', 'text-xl font-bold text-amber-400 mt-6 mb-2 first:mt-0'),
+      h2: withHighlighting('h2', 'text-lg font-bold text-amber-400 mt-5 mb-2 first:mt-0'),
+      h3: withHighlighting('h3', 'text-base font-bold text-amber-300 mt-4 mb-1 first:mt-0'),
+      h4: withHighlighting('h4', 'text-sm font-semibold text-amber-300 mt-3 mb-1 first:mt-0'),
       // Note: code blocks and inline code are NOT overridden, so they won't be highlighted
-    };
+    } as Components;
   }, [searchQuery]);
 
   if (part.ignored) {
