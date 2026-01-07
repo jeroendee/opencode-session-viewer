@@ -4,6 +4,7 @@ import type { ProjectInfo, SessionNode } from '../store/sessionStore';
 import { parseClaudeJsonl, convertToSession } from './claudeParser';
 import { listClaudeProjects } from './claudeFileSystem';
 import { StorageError } from './errors';
+import { extractCwdFromJsonl } from '../utils/extractCwdFromJsonl';
 
 /**
  * Checks if JSONL content has displayable messages after parsing.
@@ -279,6 +280,22 @@ export async function loadAllClaudeSessions(
 
     const jsonlFiles = files.filter((f) => f.endsWith('.jsonl'));
 
+    // Extract cwd from first JSONL file to use as project path
+    let projectPath: string | null = null;
+    for (const file of jsonlFiles) {
+      if (projectPath !== null) break;
+      try {
+        const content = await fs.readFile(['projects', project.encoded, file]);
+        if (content) {
+          projectPath = extractCwdFromJsonl(content);
+        }
+      } catch {
+        // Try next file
+      }
+    }
+    // Fallback to decoded path if no cwd found
+    const resolvedProjectPath = projectPath ?? project.decoded;
+
     // PASS 1: Load all sessions with sessionId
     for (const file of jsonlFiles) {
       try {
@@ -295,7 +312,7 @@ export async function loadAllClaudeSessions(
         }
 
         const sessionId = file.replace('.jsonl', '');
-        const info = extractSessionInfoFromClaude(content, sessionId, project.decoded);
+        const info = extractSessionInfoFromClaude(content, sessionId, resolvedProjectPath);
 
         // Set projectID to encoded path per spec
         info.projectID = project.encoded;
@@ -338,7 +355,7 @@ export async function loadAllClaudeSessions(
     // Add project to result
     projects.push({
       id: project.encoded,
-      path: project.decoded,
+      path: resolvedProjectPath,
       sessions: sessionTree,
     });
   }

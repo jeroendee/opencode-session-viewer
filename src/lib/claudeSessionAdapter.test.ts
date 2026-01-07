@@ -643,6 +643,149 @@ describe('claudeSessionAdapter', () => {
         expect(main2Node!.children[0].session.id).toBe('agent2');
       });
     });
+
+    describe('cwd extraction from JSONL', () => {
+      it('uses cwd from first JSONL file as project path when cwd is present', async () => {
+        // JSONL with cwd field - should use this as project path
+        const jsonlWithCwd = `{"cwd":"/real/path/to/project","type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello"}]}}`;
+
+        const mockFs: VirtualFileSystem = {
+          readFile: vi.fn().mockResolvedValue(jsonlWithCwd),
+          listDirectory: vi.fn().mockImplementation(async (path: string[]) => {
+            if (path.length === 1 && path[0] === 'projects') {
+              return ['-Users-test-project']; // Encoded path that doesn't decode correctly
+            }
+            if (path.length === 2 && path[1] === '-Users-test-project') {
+              return ['session1.jsonl'];
+            }
+            return [];
+          }),
+          exists: vi.fn().mockResolvedValue(true),
+        };
+
+        const result = await loadAllClaudeSessions(mockFs);
+
+        // Project path should come from cwd, not decoded
+        expect(result.projects[0].path).toBe('/real/path/to/project');
+        // Session directory should also use cwd
+        expect(result.sessions['session1'].directory).toBe('/real/path/to/project');
+      });
+
+      it('falls back to decoded path when JSONL has no cwd field', async () => {
+        // JSONL without cwd field
+        const jsonlNoCwd = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello"}]}}`;
+
+        const mockFs: VirtualFileSystem = {
+          readFile: vi.fn().mockResolvedValue(jsonlNoCwd),
+          listDirectory: vi.fn().mockImplementation(async (path: string[]) => {
+            if (path.length === 1 && path[0] === 'projects') {
+              return ['-Users-test-project'];
+            }
+            if (path.length === 2 && path[1] === '-Users-test-project') {
+              return ['session1.jsonl'];
+            }
+            return [];
+          }),
+          exists: vi.fn().mockResolvedValue(true),
+        };
+
+        const result = await loadAllClaudeSessions(mockFs);
+
+        // Should fall back to decoded path
+        expect(result.projects[0].path).toBe('/Users/test/project');
+        expect(result.sessions['session1'].directory).toBe('/Users/test/project');
+      });
+
+      it('falls back to decoded path when all JSONL files are empty', async () => {
+        // Empty JSONL content (will be filtered out but we still need a project path)
+        const emptyJsonl = '';
+        const validJsonl = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello"}]}}`;
+
+        const mockFs: VirtualFileSystem = {
+          readFile: vi.fn().mockImplementation(async (path: string[]) => {
+            const filename = path[path.length - 1];
+            // First file is empty, second has content but no cwd
+            if (filename === 'empty.jsonl') return emptyJsonl;
+            if (filename === 'valid.jsonl') return validJsonl;
+            return null;
+          }),
+          listDirectory: vi.fn().mockImplementation(async (path: string[]) => {
+            if (path.length === 1 && path[0] === 'projects') {
+              return ['-Users-test-project'];
+            }
+            if (path.length === 2 && path[1] === '-Users-test-project') {
+              return ['empty.jsonl', 'valid.jsonl'];
+            }
+            return [];
+          }),
+          exists: vi.fn().mockResolvedValue(true),
+        };
+
+        const result = await loadAllClaudeSessions(mockFs);
+
+        // Should fall back to decoded path since no cwd found
+        expect(result.projects[0].path).toBe('/Users/test/project');
+      });
+
+      it('uses cwd from first available JSONL when multiple files exist', async () => {
+        // First file has cwd
+        const jsonl1WithCwd = `{"cwd":"/correct/project/path","type":"user","message":{"role":"user","content":[{"type":"text","text":"Session 1"}]}}`;
+        // Second file has different cwd
+        const jsonl2WithCwd = `{"cwd":"/different/path","type":"user","message":{"role":"user","content":[{"type":"text","text":"Session 2"}]}}`;
+
+        const mockFs: VirtualFileSystem = {
+          readFile: vi.fn().mockImplementation(async (path: string[]) => {
+            const filename = path[path.length - 1];
+            if (filename === 'session1.jsonl') return jsonl1WithCwd;
+            if (filename === 'session2.jsonl') return jsonl2WithCwd;
+            return null;
+          }),
+          listDirectory: vi.fn().mockImplementation(async (path: string[]) => {
+            if (path.length === 1 && path[0] === 'projects') {
+              return ['-Users-test-project'];
+            }
+            if (path.length === 2 && path[1] === '-Users-test-project') {
+              return ['session1.jsonl', 'session2.jsonl'];
+            }
+            return [];
+          }),
+          exists: vi.fn().mockResolvedValue(true),
+        };
+
+        const result = await loadAllClaudeSessions(mockFs);
+
+        // Project path should use cwd from first JSONL
+        expect(result.projects[0].path).toBe('/correct/project/path');
+        // All sessions in this project should use the same project path
+        expect(result.sessions['session1'].directory).toBe('/correct/project/path');
+        expect(result.sessions['session2'].directory).toBe('/correct/project/path');
+      });
+
+      it('keeps encoded name as project.id for file operations', async () => {
+        const jsonlWithCwd = `{"cwd":"/real/path","type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello"}]}}`;
+
+        const mockFs: VirtualFileSystem = {
+          readFile: vi.fn().mockResolvedValue(jsonlWithCwd),
+          listDirectory: vi.fn().mockImplementation(async (path: string[]) => {
+            if (path.length === 1 && path[0] === 'projects') {
+              return ['-Users-test-project'];
+            }
+            if (path.length === 2 && path[1] === '-Users-test-project') {
+              return ['session1.jsonl'];
+            }
+            return [];
+          }),
+          exists: vi.fn().mockResolvedValue(true),
+        };
+
+        const result = await loadAllClaudeSessions(mockFs);
+
+        // project.id should still be the encoded path for file operations
+        expect(result.projects[0].id).toBe('-Users-test-project');
+        // session.projectID should also use encoded path
+        expect(result.sessions['session1'].projectID).toBe('-Users-test-project');
+      });
+    });
   });
 
   describe('loadClaudeSessionContent', () => {
