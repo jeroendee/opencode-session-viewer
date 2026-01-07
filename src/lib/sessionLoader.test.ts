@@ -1224,7 +1224,7 @@ describe('groupSessionsByDirectory', () => {
     };
   }
 
-  it('groups sessions from different projects by their directory', () => {
+  it('groups sessions by projectID, not directory', () => {
     const projects = [
       {
         id: 'proj-1',
@@ -1233,7 +1233,7 @@ describe('groupSessionsByDirectory', () => {
           {
             session: makeSession({
               id: 'sess-1',
-              projectID: 'proj-1',
+              projectID: '-Users-test-myapp',
               directory: '/Users/test/myapp',
               title: 'Session 1',
               time: { created: 1000, updated: 2000 },
@@ -1249,8 +1249,79 @@ describe('groupSessionsByDirectory', () => {
           {
             session: makeSession({
               id: 'sess-2',
-              projectID: 'proj-2',
-              directory: '/Users/test/myapp', // Same directory as sess-1
+              projectID: '-Users-test-otherapp',
+              directory: '/Users/test/myapp', // Same directory but different projectID
+              title: 'Session 2',
+              time: { created: 3000, updated: 4000 },
+            }),
+            children: [],
+          },
+        ],
+      },
+    ];
+
+    const result = groupSessionsByDirectory(projects);
+
+    // Should have 2 groups because projectIDs are different
+    expect(result).toHaveLength(2);
+    expect(result[0].projectId).toBe('-Users-test-otherapp');
+    expect(result[1].projectId).toBe('-Users-test-myapp');
+  });
+
+  it('includes both projectId and directory in return type', () => {
+    const projects = [
+      {
+        id: 'proj-1',
+        path: '/path',
+        sessions: [
+          {
+            session: makeSession({
+              id: 'sess-1',
+              projectID: '-Users-test-app',
+              directory: '/Users/test/app',
+              title: 'Session 1',
+              time: { created: 1000, updated: 2000 },
+            }),
+            children: [],
+          },
+        ],
+      },
+    ];
+
+    const result = groupSessionsByDirectory(projects);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].projectId).toBe('-Users-test-app');
+    expect(result[0].directory).toBe('/Users/test/app');
+  });
+
+  it('groups sessions with same projectID from different projects', () => {
+    const projects = [
+      {
+        id: 'proj-1',
+        path: '/path/to/project1',
+        sessions: [
+          {
+            session: makeSession({
+              id: 'sess-1',
+              projectID: '-Users-test-myapp',
+              directory: '/Users/test/myapp',
+              title: 'Session 1',
+              time: { created: 1000, updated: 2000 },
+            }),
+            children: [],
+          },
+        ],
+      },
+      {
+        id: 'proj-2',
+        path: '/path/to/project2',
+        sessions: [
+          {
+            session: makeSession({
+              id: 'sess-2',
+              projectID: '-Users-test-myapp', // Same projectID
+              directory: '/Users/test/myapp',
               title: 'Session 2',
               time: { created: 3000, updated: 4000 },
             }),
@@ -1263,6 +1334,7 @@ describe('groupSessionsByDirectory', () => {
     const result = groupSessionsByDirectory(projects);
 
     expect(result).toHaveLength(1);
+    expect(result[0].projectId).toBe('-Users-test-myapp');
     expect(result[0].directory).toBe('/Users/test/myapp');
     expect(result[0].sessions).toHaveLength(2);
   });
@@ -1313,7 +1385,7 @@ describe('groupSessionsByDirectory', () => {
     expect(result[0].sessions.map((s) => s.session.id)).toEqual(['new-sess', 'mid-sess', 'old-sess']);
   });
 
-  it('sorts directory groups by most recent session update time descending', () => {
+  it('sorts groups by most recent session update time descending', () => {
     const projects = [
       {
         id: 'proj-1',
@@ -1322,7 +1394,7 @@ describe('groupSessionsByDirectory', () => {
           {
             session: makeSession({
               id: 'old-dir-sess',
-              projectID: 'proj-1',
+              projectID: '-Users-test-old-project',
               directory: '/Users/test/old-project',
               title: 'Old Project Session',
               time: { created: 1000, updated: 1000 },
@@ -1332,7 +1404,7 @@ describe('groupSessionsByDirectory', () => {
           {
             session: makeSession({
               id: 'new-dir-sess',
-              projectID: 'proj-1',
+              projectID: '-Users-test-new-project',
               directory: '/Users/test/new-project',
               title: 'New Project Session',
               time: { created: 5000, updated: 5000 },
@@ -1346,7 +1418,9 @@ describe('groupSessionsByDirectory', () => {
     const result = groupSessionsByDirectory(projects);
 
     expect(result).toHaveLength(2);
+    expect(result[0].projectId).toBe('-Users-test-new-project');
     expect(result[0].directory).toBe('/Users/test/new-project');
+    expect(result[1].projectId).toBe('-Users-test-old-project');
     expect(result[1].directory).toBe('/Users/test/old-project');
   });
 

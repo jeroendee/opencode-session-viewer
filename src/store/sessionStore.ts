@@ -26,7 +26,8 @@ export interface ProjectInfo {
  * Used for displaying sessions organized by directory in the UI.
  */
 export interface DirectoryGroup {
-  directory: string; // The working directory path
+  projectId: string; // Unique project identifier (used as React key)
+  directory: string; // The working directory path (used for display)
   sessions: SessionNode[]; // Root sessions with nested children, sorted by time descending
   latestUpdate: number; // Most recent update time (for sorting groups)
 }

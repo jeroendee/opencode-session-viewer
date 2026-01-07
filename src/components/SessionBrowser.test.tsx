@@ -643,6 +643,182 @@ describe('SessionBrowser', () => {
     });
   });
 
+  describe('projectId as key for directory groups', () => {
+    it('renders separate groups for projects with same directory but different projectIds', () => {
+      // Two projects with the SAME directory path but different projectIDs
+      const projectsWithSameCwd: ProjectInfo[] = [
+        {
+          id: 'proj-alpha',
+          path: '/Users/test/projects/shared',
+          sessions: [
+            {
+              session: {
+                id: 'session-alpha-1',
+                version: '1.0',
+                projectID: 'proj-alpha',
+                directory: '/Users/test/projects/shared',
+                title: 'Alpha Session 1',
+                time: { created: 1704067200000, updated: 1704067200000 },
+              },
+              children: [],
+            },
+          ],
+        },
+        {
+          id: 'proj-beta',
+          path: '/Users/test/projects/shared',
+          sessions: [
+            {
+              session: {
+                id: 'session-beta-1',
+                version: '1.0',
+                projectID: 'proj-beta',
+                directory: '/Users/test/projects/shared',
+                title: 'Beta Session 1',
+                time: { created: 1704067100000, updated: 1704067100000 },
+              },
+              children: [],
+            },
+          ],
+        },
+      ];
+
+      vi.mocked(useSessionStore).mockReturnValue({
+        projects: projectsWithSameCwd,
+        allSessions: buildAllSessions(projectsWithSameCwd),
+        selectedSessionId: null,
+        selectSession: mockSelectSession,
+        clearFolder: mockClearFolder,
+      } as ReturnType<typeof useSessionStore>);
+
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      // Both groups should be rendered separately (not collapsed into one)
+      // They both have the same directory name "shared" so we should see two expand buttons
+      const expandButtons = screen.getAllByRole('button', { name: /Expand shared/i });
+      expect(expandButtons).toHaveLength(2);
+    });
+
+    it('expands groups independently when they have the same directory but different projectIds', () => {
+      const projectsWithSameCwd: ProjectInfo[] = [
+        {
+          id: 'proj-alpha',
+          path: '/Users/test/projects/shared',
+          sessions: [
+            {
+              session: {
+                id: 'session-alpha-1',
+                version: '1.0',
+                projectID: 'proj-alpha',
+                directory: '/Users/test/projects/shared',
+                title: 'Alpha Session 1',
+                time: { created: 1704067200000, updated: 1704067200000 },
+              },
+              children: [],
+            },
+          ],
+        },
+        {
+          id: 'proj-beta',
+          path: '/Users/test/projects/shared',
+          sessions: [
+            {
+              session: {
+                id: 'session-beta-1',
+                version: '1.0',
+                projectID: 'proj-beta',
+                directory: '/Users/test/projects/shared',
+                title: 'Beta Session 1',
+                time: { created: 1704067100000, updated: 1704067100000 },
+              },
+              children: [],
+            },
+          ],
+        },
+      ];
+
+      vi.mocked(useSessionStore).mockReturnValue({
+        projects: projectsWithSameCwd,
+        allSessions: buildAllSessions(projectsWithSameCwd),
+        selectedSessionId: null,
+        selectSession: mockSelectSession,
+        clearFolder: mockClearFolder,
+      } as ReturnType<typeof useSessionStore>);
+
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      // Get both expand buttons
+      const expandButtons = screen.getAllByRole('button', { name: /Expand shared/i });
+
+      // Expand only the first one
+      fireEvent.click(expandButtons[0]);
+
+      // First group's session should be visible
+      expect(screen.getByText('Alpha Session 1')).toBeInTheDocument();
+
+      // Second group's session should NOT be visible (still collapsed)
+      expect(screen.queryByText('Beta Session 1')).not.toBeInTheDocument();
+    });
+
+    it('displays directory path as text but uses projectId for key (no collapsing)', () => {
+      const projectsWithSameCwd: ProjectInfo[] = [
+        {
+          id: 'proj-alpha',
+          path: '/Users/test/projects/shared',
+          sessions: [
+            {
+              session: {
+                id: 'session-alpha-1',
+                version: '1.0',
+                projectID: 'proj-alpha',
+                directory: '/Users/test/projects/shared',
+                title: 'Alpha Session 1',
+                time: { created: 1704067200000, updated: 1704067200000 },
+              },
+              children: [],
+            },
+          ],
+        },
+        {
+          id: 'proj-beta',
+          path: '/Users/test/projects/shared',
+          sessions: [
+            {
+              session: {
+                id: 'session-beta-1',
+                version: '1.0',
+                projectID: 'proj-beta',
+                directory: '/Users/test/projects/shared',
+                title: 'Beta Session 1',
+                time: { created: 1704067100000, updated: 1704067100000 },
+              },
+              children: [],
+            },
+          ],
+        },
+      ];
+
+      vi.mocked(useSessionStore).mockReturnValue({
+        projects: projectsWithSameCwd,
+        allSessions: buildAllSessions(projectsWithSameCwd),
+        selectedSessionId: null,
+        selectSession: mockSelectSession,
+        clearFolder: mockClearFolder,
+      } as ReturnType<typeof useSessionStore>);
+
+      render(<SessionBrowser sidebarOpen={true} />);
+
+      // Both groups expand, show both sessions
+      const expandButtons = screen.getAllByRole('button', { name: /Expand shared/i });
+      fireEvent.click(expandButtons[0]);
+      fireEvent.click(expandButtons[1]);
+
+      // Both sessions should be visible (2 separate groups, not collapsed)
+      expect(screen.getByText('Alpha Session 1')).toBeInTheDocument();
+      expect(screen.getByText('Beta Session 1')).toBeInTheDocument();
+    });
+  });
+
   describe('directory filter dropdown', () => {
     it('renders the directory filter dropdown', () => {
       render(<SessionBrowser sidebarOpen={true} />);

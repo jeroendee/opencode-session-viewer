@@ -612,12 +612,12 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
   // Sync expanded directories when groups change - keep existing expanded state
   useEffect(() => {
     setExpandedDirectories((prev) => {
-      const currentDirectories = new Set(directoryGroups.map((g) => g.directory));
-      // Only keep directories that still exist
+      const currentProjectIds = new Set(directoryGroups.map((g) => g.projectId));
+      // Only keep projectIds that still exist
       const next = new Set<string>();
-      for (const dir of prev) {
-        if (currentDirectories.has(dir)) {
-          next.add(dir);
+      for (const projectId of prev) {
+        if (currentProjectIds.has(projectId)) {
+          next.add(projectId);
         }
       }
       return next;
@@ -643,7 +643,7 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
   // Expand all groups
   const handleExpandAll = useCallback(() => {
     if (groupingMode === 'directory') {
-      setExpandedDirectories(new Set(directoryGroups.map((g) => g.directory)));
+      setExpandedDirectories(new Set(directoryGroups.map((g) => g.projectId)));
     } else {
       setExpandedYears(new Set(dateGroups.map((g) => g.year)));
       const allMonths = new Set<string>();
@@ -816,10 +816,10 @@ export function SessionBrowser({ sidebarOpen, onCloseSidebar }: SessionBrowserPr
             <div className="space-y-1">
               {filteredDirectoryGroups.map((group) => (
                 <DirectoryGroupComponent
-                  key={group.directory}
+                  key={group.projectId}
                   group={group}
-                  isExpanded={isSearching || expandedDirectories.has(group.directory)}
-                  onToggle={() => handleToggleDirectory(group.directory)}
+                  isExpanded={isSearching || expandedDirectories.has(group.projectId)}
+                  onToggle={() => handleToggleDirectory(group.projectId)}
                   selectedSessionId={selectedSessionId}
                   onSelectSession={handleSelectSession}
                 />

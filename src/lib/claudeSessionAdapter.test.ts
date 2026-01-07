@@ -453,6 +453,59 @@ describe('claudeSessionAdapter', () => {
         expect(result.sessions['meta-only']).toBeUndefined();
       });
 
+      it('includes sessions with isMeta user messages if assistant messages exist', async () => {
+        // Session with isMeta user + assistant - should be included
+        const metaWithAssistantJsonl = `{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"abc","content":"result"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Response"}]}}`;
+
+        const mockFs: VirtualFileSystem = {
+          readFile: vi.fn().mockResolvedValue(metaWithAssistantJsonl),
+          listDirectory: vi.fn().mockImplementation(async (path: string[]) => {
+            if (path.length === 1 && path[0] === 'projects') {
+              return ['-Users-test-project'];
+            }
+            if (path.length === 2 && path[1] === '-Users-test-project') {
+              return ['meta-with-assistant.jsonl'];
+            }
+            return [];
+          }),
+          exists: vi.fn().mockResolvedValue(true),
+        };
+
+        const result = await loadAllClaudeSessions(mockFs);
+
+        // Should include the session since it has an assistant message
+        expect(result.projects[0].sessions).toHaveLength(1);
+        expect(result.projects[0].sessions[0].session.id).toBe('meta-with-assistant');
+        expect(result.sessions['meta-with-assistant']).toBeDefined();
+      });
+
+      it('includes sessions with only assistant messages (no user)', async () => {
+        // Session with only assistant message - should be included
+        const assistantOnlyJsonl = `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello!"}]}}`;
+
+        const mockFs: VirtualFileSystem = {
+          readFile: vi.fn().mockResolvedValue(assistantOnlyJsonl),
+          listDirectory: vi.fn().mockImplementation(async (path: string[]) => {
+            if (path.length === 1 && path[0] === 'projects') {
+              return ['-Users-test-project'];
+            }
+            if (path.length === 2 && path[1] === '-Users-test-project') {
+              return ['assistant-only.jsonl'];
+            }
+            return [];
+          }),
+          exists: vi.fn().mockResolvedValue(true),
+        };
+
+        const result = await loadAllClaudeSessions(mockFs);
+
+        // Should include the session since it has an assistant message
+        expect(result.projects[0].sessions).toHaveLength(1);
+        expect(result.projects[0].sessions[0].session.id).toBe('assistant-only');
+        expect(result.sessions['assistant-only']).toBeDefined();
+      });
+
       it('does not count empty sessions as errors', async () => {
         const emptyJsonl = '';
 

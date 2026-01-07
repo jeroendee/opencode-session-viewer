@@ -566,7 +566,7 @@ type SessionNodeLike = { session: SessionInfo; children: SessionNodeLike[] };
  */
 export function groupSessionsByDirectory(
   projects: { sessions: SessionNodeLike[] }[]
-): { directory: string; sessions: SessionNodeLike[]; latestUpdate: number }[] {
+): { projectId: string; directory: string; sessions: SessionNodeLike[]; latestUpdate: number }[] {
   // Collect all root session nodes (those without parentID)
   const rootNodes: SessionNodeLike[] = [];
   for (const project of projects) {
@@ -577,32 +577,35 @@ export function groupSessionsByDirectory(
       }
     }
   }
-  
-  // Group root nodes by directory
+
+  // Group root nodes by projectID (not directory)
   const groupMap = new Map<string, SessionNodeLike[]>();
   for (const node of rootNodes) {
-    const dir = node.session.directory;
-    if (!groupMap.has(dir)) {
-      groupMap.set(dir, []);
+    const projectId = node.session.projectID;
+    if (!groupMap.has(projectId)) {
+      groupMap.set(projectId, []);
     }
-    groupMap.get(dir)!.push(node);
+    groupMap.get(projectId)!.push(node);
   }
-  
+
   // Convert to array and sort
-  const groups: { directory: string; sessions: SessionNodeLike[]; latestUpdate: number }[] = [];
-  for (const [directory, sessions] of groupMap) {
+  const groups: { projectId: string; directory: string; sessions: SessionNodeLike[]; latestUpdate: number }[] = [];
+  for (const [projectId, sessions] of groupMap) {
     // Sort sessions within group by update time descending (newest first)
     sessions.sort((a, b) => b.session.time.updated - a.session.time.updated);
-    
+
     // Get the latest update time for sorting groups
     const latestUpdate = sessions[0]?.session.time.updated ?? 0;
-    
-    groups.push({ directory, sessions, latestUpdate });
+
+    // Get directory from first session (all sessions in group should have same projectID)
+    const directory = sessions[0]?.session.directory ?? '';
+
+    groups.push({ projectId, directory, sessions, latestUpdate });
   }
-  
+
   // Sort groups by latest update time descending (most recently updated first)
   groups.sort((a, b) => b.latestUpdate - a.latestUpdate);
-  
+
   return groups;
 }
 
