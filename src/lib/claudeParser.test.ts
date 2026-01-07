@@ -80,6 +80,60 @@ describe('claudeParser', () => {
       expect(result[0].type).toBe('user');
       expect(result[1].type).toBe('assistant');
     });
+
+    describe('isMeta filtering', () => {
+      it('skips user messages where isMeta is true', () => {
+        const jsonl = '{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Meta message"}]}}';
+
+        const result = parseClaudeJsonl(jsonl);
+
+        expect(result).toHaveLength(0);
+      });
+
+      it('keeps user messages where isMeta is false', () => {
+        const jsonl = '{"type":"user","isMeta":false,"message":{"role":"user","content":[{"type":"text","text":"Regular message"}]}}';
+
+        const result = parseClaudeJsonl(jsonl);
+
+        expect(result).toHaveLength(1);
+        expect(result[0].type).toBe('user');
+      });
+
+      it('keeps user messages where isMeta is undefined', () => {
+        const jsonl = '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"No isMeta field"}]}}';
+
+        const result = parseClaudeJsonl(jsonl);
+
+        expect(result).toHaveLength(1);
+        expect(result[0].type).toBe('user');
+      });
+
+      it('keeps assistant messages regardless of isMeta', () => {
+        const jsonl = '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Response"}]}}';
+
+        const result = parseClaudeJsonl(jsonl);
+
+        expect(result).toHaveLength(1);
+        expect(result[0].type).toBe('assistant');
+      });
+
+      it('filters isMeta user messages from mixed JSONL', () => {
+        const jsonl = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Real user message"}]}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"result"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Response"}]}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Another meta"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Second real message"}]}}`;
+
+        const result = parseClaudeJsonl(jsonl);
+
+        expect(result).toHaveLength(3);
+        expect(result[0].type).toBe('user');
+        expect((result[0].message.content as Array<{text: string}>)[0].text).toBe('Real user message');
+        expect(result[1].type).toBe('assistant');
+        expect(result[2].type).toBe('user');
+        expect((result[2].message.content as Array<{text: string}>)[0].text).toBe('Second real message');
+      });
+    });
   });
 
   describe('convertToSession', () => {

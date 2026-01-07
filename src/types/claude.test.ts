@@ -71,6 +71,44 @@ describe('Claude TypeScript Types', () => {
       expect(userMessage.sessionId).toBeUndefined();
     });
 
+    it('accepts optional isMeta field set to true', () => {
+      const userMessage: ClaudeUserMessage = {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: 'System command',
+        },
+        isMeta: true,
+      };
+
+      expect(userMessage.isMeta).toBe(true);
+    });
+
+    it('accepts optional isMeta field set to false', () => {
+      const userMessage: ClaudeUserMessage = {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: 'Regular user message',
+        },
+        isMeta: false,
+      };
+
+      expect(userMessage.isMeta).toBe(false);
+    });
+
+    it('allows isMeta to be undefined', () => {
+      const userMessage: ClaudeUserMessage = {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: 'Hello',
+        },
+      };
+
+      expect(userMessage.isMeta).toBeUndefined();
+    });
+
     it('accepts user message with tool_result content', () => {
       const toolResult: ClaudeToolResult = {
         type: 'tool_result',

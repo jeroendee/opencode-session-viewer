@@ -6,6 +6,15 @@ import { listClaudeProjects } from './claudeFileSystem';
 import { StorageError } from './errors';
 
 /**
+ * Checks if JSONL content has displayable messages after parsing.
+ * Returns false for empty content or content with only isMeta entries.
+ */
+function hasDisplayableMessages(jsonlContent: string): boolean {
+  const entries = parseClaudeJsonl(jsonlContent);
+  return entries.length > 0;
+}
+
+/**
  * Result of loading all Claude sessions from storage.
  * Matches the shape of OpenCode's LoadSessionsResult.
  */
@@ -26,8 +35,110 @@ export interface ExtractSessionInfoResult extends SessionInfo {
 const MAX_TITLE_LENGTH = 100;
 
 /**
+ * Truncates text to MAX_TITLE_LENGTH with ellipsis if needed.
+ */
+function truncateTitle(text: string): string {
+  if (text.length > MAX_TITLE_LENGTH) {
+    return text.slice(0, MAX_TITLE_LENGTH - 3) + '...';
+  }
+  return text;
+}
+
+/**
+ * Summary entry in Claude JSONL.
+ */
+interface ClaudeSummaryEntry {
+  type: 'summary';
+  summary: string;
+}
+
+/**
+ * Checks if a raw JSONL entry is a summary entry.
+ */
+function isSummaryEntry(entry: unknown): entry is ClaudeSummaryEntry {
+  if (typeof entry !== 'object' || entry === null) return false;
+  const typed = entry as { type?: unknown; summary?: unknown };
+  return typed.type === 'summary' && typeof typed.summary === 'string';
+}
+
+/**
+ * Extracts text from user message content, returning null if content starts with '<'.
+ */
+function extractValidUserText(content: string | { type: string; text?: string }[]): string | null {
+  if (typeof content === 'string') {
+    return content.startsWith('<') ? null : content;
+  }
+  const textBlock = content.find((b) => b.type === 'text');
+  if (textBlock && textBlock.type === 'text' && 'text' in textBlock) {
+    const text = textBlock.text as string;
+    return text.startsWith('<') ? null : text;
+  }
+  return null;
+}
+
+/**
+ * Extracts title from Claude JSONL using two-pass approach:
+ * 1. First pass looks for type=summary entry
+ * 2. Second pass finds first non-meta user message where text doesn't start with '<'
+ */
+function extractTitle(jsonlContent: string, fallback: string): string {
+  const lines = jsonlContent.split('\n');
+
+  // Pass 1: Look for summary entry
+  for (const line of lines) {
+    if (line.trim() === '') continue;
+    try {
+      const parsed = JSON.parse(line);
+      if (isSummaryEntry(parsed)) {
+        return truncateTitle(parsed.summary);
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  // Pass 2: Find first valid user message (skip isMeta and XML content)
+  for (const line of lines) {
+    if (line.trim() === '') continue;
+    try {
+      const parsed = JSON.parse(line);
+      if (typeof parsed !== 'object' || parsed === null) continue;
+
+      const entry = parsed as {
+        type?: unknown;
+        isMeta?: boolean;
+        message?: { content?: unknown };
+      };
+
+      // Skip non-user entries
+      if (entry.type !== 'user') continue;
+
+      // Skip isMeta entries
+      if (entry.isMeta) continue;
+
+      // Extract text and skip if starts with '<'
+      const content = entry.message?.content;
+      if (content === undefined) continue;
+
+      const text = extractValidUserText(content as string | { type: string; text?: string }[]);
+      if (text !== null) {
+        return truncateTitle(text);
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return fallback;
+}
+
+/**
  * Extracts SessionInfo from Claude JSONL transcript content.
  * Also extracts sessionId from first entry for parent linking.
+ *
+ * Title extraction (based on Simon's _get_jsonl_summary()):
+ * 1. First pass looks for type=summary entry
+ * 2. Second pass finds first non-meta user message where text doesn't start with '<'
  */
 export function extractSessionInfoFromClaude(
   jsonlContent: string,
@@ -40,30 +151,8 @@ export function extractSessionInfoFromClaude(
   // Extract sessionId from first entry (for parent linking)
   const parentSessionId = entries.length > 0 ? entries[0].sessionId : undefined;
 
-  // Extract title from first user message
-  let title = sessionId;
-  for (const entry of entries) {
-    if (entry.type === 'user') {
-      const content = entry.message.content;
-      // Handle string content directly
-      if (typeof content === 'string') {
-        title = content;
-        if (title.length > MAX_TITLE_LENGTH) {
-          title = title.slice(0, MAX_TITLE_LENGTH - 3) + '...';
-        }
-        break;
-      }
-      // Handle array content - find text block
-      const textBlock = content.find((b) => b.type === 'text');
-      if (textBlock && textBlock.type === 'text') {
-        title = textBlock.text;
-        if (title.length > MAX_TITLE_LENGTH) {
-          title = title.slice(0, MAX_TITLE_LENGTH - 3) + '...';
-        }
-        break;
-      }
-    }
-  }
+  // Extract title using two-pass approach
+  const title = extractTitle(jsonlContent, sessionId);
 
   return {
     id: sessionId,
@@ -194,8 +283,14 @@ export async function loadAllClaudeSessions(
     for (const file of jsonlFiles) {
       try {
         const content = await fs.readFile(['projects', project.encoded, file]);
-        if (!content) {
+        // null means file read failed; empty string is valid but empty content
+        if (content === null) {
           errorCount++;
+          continue;
+        }
+
+        // Skip sessions with 0 displayable messages (empty or only isMeta entries)
+        if (!hasDisplayableMessages(content)) {
           continue;
         }
 

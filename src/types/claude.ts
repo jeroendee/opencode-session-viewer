@@ -77,6 +77,8 @@ export interface ClaudeUserMessage {
   };
   cwd?: string;
   gitBranch?: string;
+  /** Indicates system/command messages that should be filtered from display */
+  isMeta?: boolean;
 }
 
 /**

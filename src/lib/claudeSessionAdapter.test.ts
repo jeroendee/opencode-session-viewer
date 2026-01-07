@@ -102,6 +102,115 @@ describe('claudeSessionAdapter', () => {
 
       expect(result.sessionId).toBeUndefined();
     });
+
+    describe('title extraction improvements', () => {
+      it('uses summary entry as title when present', () => {
+        const jsonl = `{"type":"summary","summary":"Implemented feature X and fixed bug Y"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"First user message"}]}}`;
+
+        const info = extractSessionInfoFromClaude(
+          jsonl,
+          'session-summary',
+          '/Users/test/project'
+        );
+
+        expect(info.title).toBe('Implemented feature X and fixed bug Y');
+      });
+
+      it('skips isMeta user messages for title extraction', () => {
+        const jsonl = `{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Meta message to skip"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Real user message"}]}}`;
+
+        const info = extractSessionInfoFromClaude(
+          jsonl,
+          'session-meta',
+          '/Users/test/project'
+        );
+
+        expect(info.title).toBe('Real user message');
+      });
+
+      it('skips user messages starting with < (XML/command content)', () => {
+        const jsonl = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"<system-reminder>Some XML content</system-reminder>"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Help me write a function"}]}}`;
+
+        const info = extractSessionInfoFromClaude(
+          jsonl,
+          'session-xml',
+          '/Users/test/project'
+        );
+
+        expect(info.title).toBe('Help me write a function');
+      });
+
+      it('prefers summary entry over user messages', () => {
+        const jsonl = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"First user question"}]}}
+{"type":"summary","summary":"Session about implementing tests"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Sure!"}]}}`;
+
+        const info = extractSessionInfoFromClaude(
+          jsonl,
+          'session-order',
+          '/Users/test/project'
+        );
+
+        expect(info.title).toBe('Session about implementing tests');
+      });
+
+      it('falls back to sessionId when all user messages start with <', () => {
+        const jsonl = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"<command>some command</command>"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"<another-xml>more xml</another-xml>"}]}}`;
+
+        const info = extractSessionInfoFromClaude(
+          jsonl,
+          'session-all-xml',
+          '/Users/test/project'
+        );
+
+        expect(info.title).toBe('session-all-xml');
+      });
+
+      it('skips both isMeta and XML messages to find real title', () => {
+        const jsonl = `{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Meta message"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"<xml>XML content</xml>"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Actual question from user"}]}}`;
+
+        const info = extractSessionInfoFromClaude(
+          jsonl,
+          'session-mixed',
+          '/Users/test/project'
+        );
+
+        expect(info.title).toBe('Actual question from user');
+      });
+
+      it('truncates long summary titles', () => {
+        const longSummary = 'A'.repeat(200);
+        const jsonl = `{"type":"summary","summary":"${longSummary}"}`;
+
+        const info = extractSessionInfoFromClaude(
+          jsonl,
+          'session-long-summary',
+          '/Users/test/project'
+        );
+
+        expect(info.title.length).toBeLessThanOrEqual(100);
+        expect(info.title.endsWith('...')).toBe(true);
+      });
+
+      it('handles string content that starts with <', () => {
+        const jsonl = `{"type":"user","message":{"role":"user","content":"<xml>Content as string</xml>"}}
+{"type":"user","message":{"role":"user","content":"Real question"}}`;
+
+        const info = extractSessionInfoFromClaude(
+          jsonl,
+          'session-string-xml',
+          '/Users/test/project'
+        );
+
+        expect(info.title).toBe('Real question');
+      });
+    });
   });
 
   describe('listClaudeSessionInfos', () => {
@@ -272,6 +381,101 @@ describe('claudeSessionAdapter', () => {
       expect(result.projects).toHaveLength(1);
       expect(result.projects[0].sessions).toHaveLength(0);
       expect(result.errorCount).toBe(0);
+    });
+
+    describe('empty session filtering', () => {
+      it('skips sessions with 0 displayable messages', async () => {
+        // Empty JSONL content (no entries)
+        const emptyJsonl = '';
+        // Valid session with messages
+        const validJsonl = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello"}]}}`;
+
+        const mockFs: VirtualFileSystem = {
+          readFile: vi.fn().mockImplementation(async (path: string[]) => {
+            const filename = path[path.length - 1];
+            if (filename === 'empty-session.jsonl') return emptyJsonl;
+            if (filename === 'valid-session.jsonl') return validJsonl;
+            return null;
+          }),
+          listDirectory: vi.fn().mockImplementation(async (path: string[]) => {
+            if (path.length === 1 && path[0] === 'projects') {
+              return ['-Users-test-project'];
+            }
+            if (path.length === 2 && path[1] === '-Users-test-project') {
+              return ['empty-session.jsonl', 'valid-session.jsonl'];
+            }
+            return [];
+          }),
+          exists: vi.fn().mockResolvedValue(true),
+        };
+
+        const result = await loadAllClaudeSessions(mockFs);
+
+        // Should only have valid session, empty should be filtered out
+        expect(result.projects[0].sessions).toHaveLength(1);
+        expect(result.projects[0].sessions[0].session.id).toBe('valid-session');
+        // Flat sessions record should also exclude empty session
+        expect(Object.keys(result.sessions)).toHaveLength(1);
+        expect(result.sessions['valid-session']).toBeDefined();
+        expect(result.sessions['empty-session']).toBeUndefined();
+      });
+
+      it('skips sessions with only isMeta user messages', async () => {
+        // Session with only isMeta=true entries (filtered by parseClaudeJsonl)
+        const metaOnlyJsonl = `{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"abc","content":"result"}]}}`;
+        // Valid session with real user message
+        const validJsonl = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Real message"}]}}`;
+
+        const mockFs: VirtualFileSystem = {
+          readFile: vi.fn().mockImplementation(async (path: string[]) => {
+            const filename = path[path.length - 1];
+            if (filename === 'meta-only.jsonl') return metaOnlyJsonl;
+            if (filename === 'valid-session.jsonl') return validJsonl;
+            return null;
+          }),
+          listDirectory: vi.fn().mockImplementation(async (path: string[]) => {
+            if (path.length === 1 && path[0] === 'projects') {
+              return ['-Users-test-project'];
+            }
+            if (path.length === 2 && path[1] === '-Users-test-project') {
+              return ['meta-only.jsonl', 'valid-session.jsonl'];
+            }
+            return [];
+          }),
+          exists: vi.fn().mockResolvedValue(true),
+        };
+
+        const result = await loadAllClaudeSessions(mockFs);
+
+        // Should only have valid session
+        expect(result.projects[0].sessions).toHaveLength(1);
+        expect(result.projects[0].sessions[0].session.id).toBe('valid-session');
+        expect(result.sessions['meta-only']).toBeUndefined();
+      });
+
+      it('does not count empty sessions as errors', async () => {
+        const emptyJsonl = '';
+
+        const mockFs: VirtualFileSystem = {
+          readFile: vi.fn().mockResolvedValue(emptyJsonl),
+          listDirectory: vi.fn().mockImplementation(async (path: string[]) => {
+            if (path.length === 1 && path[0] === 'projects') {
+              return ['-Users-test-project'];
+            }
+            if (path.length === 2 && path[1] === '-Users-test-project') {
+              return ['empty-session.jsonl'];
+            }
+            return [];
+          }),
+          exists: vi.fn().mockResolvedValue(true),
+        };
+
+        const result = await loadAllClaudeSessions(mockFs);
+
+        // Empty sessions are silently skipped, not counted as errors
+        expect(result.errorCount).toBe(0);
+        expect(result.projects[0].sessions).toHaveLength(0);
+      });
     });
 
     describe('session hierarchy', () => {

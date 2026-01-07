@@ -45,6 +45,8 @@ export function parseClaudeJsonl(jsonl: string): ClaudeTranscriptEntry[] {
     if (line.trim() === '') continue;
     const parsed = JSON.parse(line);
     if (isClaudeMessageEntry(parsed)) {
+      // Skip user messages with isMeta=true (system/command messages)
+      if (parsed.type === 'user' && parsed.isMeta) continue;
       entries.push(parsed);
     }
   }
